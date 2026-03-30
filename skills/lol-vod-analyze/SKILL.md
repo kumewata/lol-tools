@@ -5,26 +5,46 @@ description: LoL の解説動画やプレイ動画を分析し、学習レポー
 
 # /lol-vod-analyze - LoL 動画分析レポート生成
 
-YouTube 上の LoL 解説動画・コーチング動画・プレイ動画を AI で分析し、構造化されたHTMLレポートを生成する。
+LoL の解説動画・コーチング動画・プレイ動画を AI で分析し、構造化されたHTMLレポートを生成する。
 
 ## 前提
 
 - ツールは `packages/lol_vod_analyzer/` にある
 - ルートの `.env` に `GOOGLE_API_KEY` が設定済みであること
-- YouTube 動画の字幕（自動生成含む）とストーリーボード画像を取得して Gemini で分析する
+- YouTube 動画は字幕（自動生成含む）とストーリーボード画像、またはダウンロードした動画から分析する
+- ローカル動画ファイルも入力できる
+- `--match-data` を使うと `lol-review` の試合データと結合できる
 
 ## 手順
 
-1. ユーザーから動画 URL を受け取る（YouTube URL）
-2. 分析モードを確認する:
-   - **commentary** — 解説・コーチング動画向け（字幕テキスト重視）。デフォルト
+1. 入力ソースを確認する
+   - YouTube URL
+   - ローカル動画ファイルパス
+2. 分析モードを判断する
+   - **commentary** — 解説・コーチング動画向け（字幕テキスト重視）
    - **gameplay** — プレイ動画向け（画像重視）
-3. 以下のコマンドを実行:
+   - モード指定がない場合、CLI 側で自動判定またはデフォルトに任せてよい
+3. 必要なら試合データ連携の有無を確認する
+   - 明示的な `findings.json` があればそれを使う
+   - 直前に `lol-tools review` を実行している場合は `packages/lol_review/output/latest_findings.json` を候補にしてよい
+4. ソースに応じて以下のいずれかを実行する
+   YouTube:
    ```bash
    uv run lol-tools vod analyze '<YouTube URL>' --mode <mode> --no-open
    ```
-4. 生成されたHTMLレポートのパスが出力されるので、その内容を読み込む
-5. レポートの内容をユーザーに要約して伝える
+   YouTube をダウンロードして gameplay 分析:
+   ```bash
+   uv run lol-tools vod analyze '<YouTube URL>' --download --mode gameplay --no-open
+   ```
+   ローカル動画:
+   ```bash
+   uv run lol-tools vod analyze /path/to/video.mp4 --mode gameplay --interval 5 --no-open
+   ```
+   試合データを結合する場合:
+   ```bash
+   uv run lol-tools vod analyze /path/to/video.mp4 --mode gameplay --match-data packages/lol_review/output/latest_findings.json --no-open
+   ```
+5. 生成されたHTMLレポートのパスを読み取り、内容を要約する
 
 ## 出力の読み方
 
@@ -42,7 +62,8 @@ HTMLの中に以下のセクションがある:
 レポート生成後、以下の構成で要約を伝える:
 
 ### 動画概要
-- タイトル、再生時間、分析モード
+- タイトルまたはファイル名、再生時間、分析モード
+- `match-data` を併用した場合は対象チャンピオン/ロールも添える
 
 ### 学べるポイント（Topics のまとめ）
 - 各トピックの要点を箇条書きで簡潔に
@@ -52,10 +73,11 @@ HTMLの中に以下のセクションがある:
 - Tips をそのまま伝える
 
 ### 注目シーン
-- Key Moments から特に重要な 5 つ程度をピックアップ
-- 各シーンに YouTube タイムスタンプリンク付き
+- Key Moments から特に重要な 3-5 件をピックアップ
+- YouTube の場合はタイムスタンプリンクを付ける
+- ローカル動画の場合は時刻だけを示す
 
-最後にHTMLレポートのパスを伝え、ブラウザで全体を確認できることを案内する。
+最後にHTMLレポートのパスを伝え、必要なら `--match-data` 付きで再分析できることも案内する。
 
 ## lol-advice との連携
 
@@ -66,6 +88,7 @@ HTMLの中に以下のセクションがある:
 
 ## トラブルシューティング
 
-- **字幕が取得できない場合** — 動画に自動字幕がない可能性がある。別の動画を試すか、手動字幕付きの動画を選ぶ
+- **字幕が取得できない場合** — YouTube 字幕が無い可能性がある。`--download --mode gameplay` かローカル動画分析に切り替える
 - **GOOGLE_API_KEY エラー** — ルートの `.env` に API キーが設定されているか確認
+- **match-data エラー** — JSON パスが存在するか、`packages/lol_review/output/latest_findings.json` を使えるか確認
 - **yt-dlp エラー** — `uv pip install --upgrade yt-dlp` で更新を試す
