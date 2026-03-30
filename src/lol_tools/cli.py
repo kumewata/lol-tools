@@ -26,7 +26,7 @@ app = typer.Typer(
 
 
 # Mount lol_vod_analyzer as "vod" subcommand
-app.add_typer(vod_app, name="vod", help="動画分析 (VOD analysis)")
+app.add_typer(vod_app, name="vod", help="動画分析（解説動画・プレイ動画）")
 
 
 def _load_env() -> None:
@@ -289,9 +289,11 @@ def examples() -> None:
     console.print("\n[bold]Match Review[/]")
     console.print('uv run lol-tools review "SummonerName#JP1"')
     console.print("uv run lol-tools review --count 1 --no-open")
-    console.print("\n[bold]VOD Analysis[/]")
+    console.print("\n[bold]VOD Analysis: Commentary[/]")
     console.print("uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --mode commentary")
+    console.print("\n[bold]VOD Analysis: Gameplay[/]")
     console.print("uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5")
+    console.print("uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5 --match-data packages/lol_review/output/latest_findings.json")
 
 
 if __name__ == "__main__":
