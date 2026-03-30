@@ -9,8 +9,8 @@ YouTube 上の LoL 解説動画・コーチング動画・プレイ動画を AI 
 
 ## 前提
 
-- ツールは `lol_vod_analyzer/` にある
-- `.env` に `GOOGLE_API_KEY` が設定済みであること
+- ツールは `packages/lol_vod_analyzer/` にある
+- ルートの `.env` に `GOOGLE_API_KEY` が設定済みであること
 - YouTube 動画の字幕（自動生成含む）とストーリーボード画像を取得して Gemini で分析する
 
 ## 手順
@@ -21,14 +21,14 @@ YouTube 上の LoL 解説動画・コーチング動画・プレイ動画を AI 
    - **gameplay** — プレイ動画向け（画像重視）
 3. 以下のコマンドを実行:
    ```bash
-   cd lol_vod_analyzer && uv run lol-vod '<YouTube URL>' --mode <mode> --no-open
+   uv run lol-tools vod analyze '<YouTube URL>' --mode <mode> --no-open
    ```
 4. 生成されたHTMLレポートのパスが出力されるので、その内容を読み込む
 5. レポートの内容をユーザーに要約して伝える
 
 ## 出力の読み方
 
-レポートは `lol_vod_analyzer/output/vod_analysis_YYYYMMDD_HHMMSS.html` に保存される。
+レポートは `packages/lol_vod_analyzer/output/vod_analysis_YYYYMMDD_HHMMSS.html` に保存される。
 
 HTMLの中に以下のセクションがある:
 
@@ -67,5 +67,5 @@ HTMLの中に以下のセクションがある:
 ## トラブルシューティング
 
 - **字幕が取得できない場合** — 動画に自動字幕がない可能性がある。別の動画を試すか、手動字幕付きの動画を選ぶ
-- **GOOGLE_API_KEY エラー** — `lol_vod_analyzer/.env` に API キーが設定されているか確認
-- **yt-dlp エラー** — `cd lol_vod_analyzer && uv pip install --upgrade yt-dlp` で更新を試す
+- **GOOGLE_API_KEY エラー** — ルートの `.env` に API キーが設定されているか確認
+- **yt-dlp エラー** — `uv pip install --upgrade yt-dlp` で更新を試す
