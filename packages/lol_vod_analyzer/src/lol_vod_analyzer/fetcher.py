@@ -16,9 +16,9 @@ from PIL import Image
 from lol_vod_analyzer.models import TranscriptSegment, VideoSource
 
 _ALLOWED_SCHEMES = {"https", "http"}
-_ALLOWED_HOST_SUFFIXES = (
-    ".googlevideo.com", ".youtube.com", ".ytimg.com",
-    ".google.com", ".googleapis.com",
+_ALLOWED_HOSTS = (
+    "googlevideo.com", "youtube.com", "ytimg.com",
+    "google.com", "googleapis.com",
 )
 _MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # 50 MB
 
@@ -29,7 +29,7 @@ def _validate_url(url: str) -> None:
     if parsed.scheme not in _ALLOWED_SCHEMES:
         raise ValueError(f"Disallowed URL scheme: {parsed.scheme}")
     hostname = parsed.hostname or ""
-    if not any(hostname.endswith(suffix) for suffix in _ALLOWED_HOST_SUFFIXES):
+    if not any(hostname == h or hostname.endswith(f".{h}") for h in _ALLOWED_HOSTS):
         raise ValueError(f"Disallowed host: {hostname}")
 
 

@@ -11,10 +11,11 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from lol_vod_analyzer.models import AnalysisResult, SceneSnapshot
 
-# __file__ = packages/lol_vod_analyzer/src/lol_vod_analyzer/report.py
-PACKAGE_ROOT = Path(__file__).parent.parent.parent
-TEMPLATE_DIR = PACKAGE_ROOT / "templates"
-DEFAULT_OUTPUT_DIR = PACKAGE_ROOT / "output"
+# Source checkout: packages/lol_vod_analyzer/src/lol_vod_analyzer/report.py -> packages/lol_vod_analyzer/
+_PACKAGE_ROOT = Path(__file__).parent.parent.parent
+_INSTALLED_TEMPLATE_DIR = Path(__file__).parent / "templates"
+TEMPLATE_DIR = _INSTALLED_TEMPLATE_DIR if _INSTALLED_TEMPLATE_DIR.is_dir() else _PACKAGE_ROOT / "templates"
+DEFAULT_OUTPUT_DIR = _PACKAGE_ROOT / "output"
 
 
 def _format_timestamp(ms: int) -> str:

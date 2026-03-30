@@ -13,11 +13,12 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from lol_review.advisor import Finding, analyze_findings
 from lol_review.models import AnalysisResult
 
-# __file__ = packages/lol_review/src/lol_review/report.py
-# Package root = packages/lol_review/
-PACKAGE_ROOT = Path(__file__).parent.parent.parent
-TEMPLATE_DIR = PACKAGE_ROOT / "templates"
-OUTPUT_DIR = PACKAGE_ROOT / "output"
+# Source checkout: packages/lol_review/src/lol_review/report.py -> packages/lol_review/
+_PACKAGE_ROOT = Path(__file__).parent.parent.parent
+# Installed wheel: templates are included alongside the package
+_INSTALLED_TEMPLATE_DIR = Path(__file__).parent / "templates"
+TEMPLATE_DIR = _INSTALLED_TEMPLATE_DIR if _INSTALLED_TEMPLATE_DIR.is_dir() else _PACKAGE_ROOT / "templates"
+OUTPUT_DIR = _PACKAGE_ROOT / "output"
 
 
 def range_list(n: int) -> list[int]:

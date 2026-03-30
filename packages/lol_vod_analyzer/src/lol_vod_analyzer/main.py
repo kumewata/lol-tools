@@ -115,6 +115,7 @@ def analyze(
                     open_browser=not no_open,
                     lang=lang,
                     api_key=api_key,
+                    match_context=match_context,
                 )
             )
     else:
@@ -140,6 +141,7 @@ async def _analyze_youtube(
     open_browser: bool,
     lang: str,
     api_key: str,
+    match_context: dict | None = None,
 ) -> None:
     with Progress(
         SpinnerColumn(),
@@ -195,6 +197,7 @@ async def _analyze_youtube(
             snapshots=snapshots,
             mode=analysis_mode,
             api_key=api_key,
+            match_context=match_context,
         )
 
         progress.update(task, description="レポートを生成中...")
