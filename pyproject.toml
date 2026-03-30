@@ -1,0 +1,35 @@
+[project]
+name = "lol-tools"
+version = "0.1.0"
+description = "League of Legends 上達支援ツール群"
+requires-python = ">=3.12"
+dependencies = [
+    "lol-review",
+    "lol-vod-analyzer",
+    "typer[all]>=0.9",
+    "rich>=13.7",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+lol-tools = "lol_tools.cli:app"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+lol-review = { workspace = true }
+lol-vod-analyzer = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lol_tools"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]

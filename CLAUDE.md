@@ -4,52 +4,87 @@
 
 League of Legends 上達支援ツール群。試合データの分析と動画分析を組み合わせて、具体的な改善アドバイスを生成する。
 
-## Projects
+## Project Structure
 
-### lol_review — 試合データ分析
-Riot API から試合データを取得し、統計分析・改善点検出・HTMLレポートを生成する。
+uv workspace による monorepo 構成。
 
-```bash
-cd lol_review && uv sync
-uv run lol-review report "SummonerName#JP1" --no-open
+```
+lol-tools/
+├── pyproject.toml              # workspace root + lol-tools CLI
+├── src/lol_tools/cli.py        # 統一エントリポイント
+├── .env                        # 全 API キー（RIOT_API_KEY, GOOGLE_API_KEY）
+├── packages/
+│   ├── lol_review/             # 試合データ分析
+│   │   ├── pyproject.toml
+│   │   ├── src/lol_review/
+│   │   ├── templates/
+│   │   └── tests/
+│   └── lol_vod_analyzer/       # 動画分析
+│       ├── pyproject.toml
+│       ├── src/lol_vod_analyzer/
+│       ├── templates/
+│       └── tests/
 ```
 
-### lol_vod_analyzer — 動画分析
-YouTube 解説動画やローカル動画を AI で分析し、構造化されたHTMLレポートを生成する。
+## Setup
 
 ```bash
-cd lol_vod_analyzer && uv sync
+uv sync                         # 全パッケージの依存関係を一括インストール
+```
+
+## Usage
+
+### 統一 CLI
+
+```bash
+# 試合データ分析
+uv run lol-tools review "SummonerName#JP1" --no-open
+
+# 動画分析
+uv run lol-tools vod analyze 'https://youtube.com/...' --mode commentary
+```
+
+### 個別コマンド（後方互換）
+
+```bash
+# 試合データ分析
+uv run lol-review report "SummonerName#JP1" --no-open
+
 # YouTube 解説動画
 uv run lol-vod 'https://youtube.com/...' --mode commentary
 # ローカル動画 + 試合データ連携
 uv run lol-vod ~/Desktop/replay.mov --mode gameplay --interval 5 \
-  --match-data ../lol_review/output/latest_findings.json
+  --match-data packages/lol_review/output/latest_findings.json
 # YouTube 動画ダウンロード → ローカル分析
 uv run lol-vod 'https://youtube.com/...' --download --mode gameplay
 ```
 
 ## Technology Stack
 
-- **Python 3.12+** / **uv** package manager
+- **Python 3.12+** / **uv** package manager (workspace)
 - **Riot API** (lol_review)
 - **Google Gemini API** (lol_vod_analyzer)
 - **yt-dlp** (YouTube字幕・ストーリーボード・動画ダウンロード)
 - **OpenCV** / **Pillow** (スクリーンショット抽出・画像処理)
 - **ffmpeg** (音声抽出・画面録画)
-- **Pydantic** / **Jinja2** / **Typer** / **Rich**
+- **Pydantic** / **Jinja2** / **Typer** / **Click** / **Rich**
 - **pytest** (テスト)
 
 ## Environment Requirements
 
-各プロジェクトの `.env` に API Key を設定:
-- `lol_review/.env`: `RIOT_API_KEY=...`
-- `lol_vod_analyzer/.env`: `GOOGLE_API_KEY=...`
+ルートの `.env` に全 API キーを設定:
+
+```
+RIOT_API_KEY=...
+GOOGLE_API_KEY=...
+DEFAULT_COUNT=20
+```
 
 ## Testing
 
 ```bash
-cd lol_review && uv run pytest
-cd lol_vod_analyzer && uv run pytest
+uv run pytest packages/lol_review/tests
+uv run pytest packages/lol_vod_analyzer/tests
 ```
 
 ## Data Flow

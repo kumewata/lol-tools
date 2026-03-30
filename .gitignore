@@ -3,3 +3,8 @@ output/
 .venv/
 __pycache__/
 *.pyc
+packages/*/uv.lock
+.pytest_cache/
+*.egg-info/
+dist/
+build/
