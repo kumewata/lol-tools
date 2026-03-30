@@ -4,6 +4,13 @@
 
 League of Legends 上達支援ツール群。試合データの分析と動画分析を組み合わせて、具体的な改善アドバイスを生成する。
 
+## Shared Skills
+
+- 共有スキル本体は `skills/` 配下に置く
+- `.claude/skills` は `skills/` への互換リンク
+- `.codex/skills` も `skills/` への互換リンク
+- Claude Code / Codex のどちら向けの更新でも、編集先は `skills/` を正とする
+
 ## Project Structure
 
 uv workspace による monorepo 構成。

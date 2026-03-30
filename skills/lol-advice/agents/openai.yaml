@@ -1,0 +1,7 @@
+interface:
+  display_name: "LoL Advice"
+  short_description: "試合データから具体的な改善提案を出す"
+  default_prompt: "Use $lol-advice to analyze the latest League of Legends match data, using DEFAULT_RIOT_ID when no Riot ID is provided."
+
+policy:
+  allow_implicit_invocation: true

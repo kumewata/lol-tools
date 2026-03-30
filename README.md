@@ -2,6 +2,13 @@
 
 League of Legends 上達支援ツール群。試合データの分析と動画分析を組み合わせて、具体的な改善アドバイスを生成する。
 
+## AI Skill Layout
+
+- 共有スキル本体は `skills/` に配置
+- `.claude/skills` は Claude Code 互換の入口
+- `.codex/skills` は Codex 互換の入口
+- スキルを更新するときは `skills/` 配下だけを編集すれば両方に反映される
+
 ## セットアップ
 
 ### 前提条件
