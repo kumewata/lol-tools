@@ -30,7 +30,7 @@ from lol_vod_analyzer.local_video import (
 from lol_vod_analyzer.models import SceneSnapshot, VideoSource
 from lol_vod_analyzer.report import generate_report
 
-app = typer.Typer(help="LoL VOD Analysis Tool")
+app = typer.Typer(help="LoL VOD Analysis Tool", rich_markup_mode="markdown")
 console = Console()
 
 # __file__ = packages/lol_vod_analyzer/src/lol_vod_analyzer/main.py
@@ -52,7 +52,13 @@ def analyze(
         None, "--match-data", help="Path to lol_review findings JSON for match context"
     ),
 ) -> None:
-    """Analyze a LoL video and generate an HTML report."""
+    """Analyze a LoL video and generate an HTML report.
+
+    Examples:
+    `uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --mode commentary`
+    `uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5`
+    `uv run lol-tools examples`
+    """
     load_dotenv(_ENV_PATH)
 
     # Load match context from lol_review findings JSON if provided
@@ -90,7 +96,10 @@ def analyze(
     if not api_key:
         console.print(
             "[red]Error:[/] GOOGLE_API_KEY が設定されていません。\n"
-            ".env ファイルに GOOGLE_API_KEY=<your_key> を追記してください。"
+            "次のいずれかで設定してください。\n"
+            "1. `uv run lol-tools init`\n"
+            "2. `.env` に `GOOGLE_API_KEY=<your_key>` を追記\n"
+            "3. 確認は `uv run lol-tools doctor`"
         )
         raise typer.Exit(1)
 
@@ -121,7 +130,10 @@ def analyze(
     else:
         video_path = Path(source)
         if not video_path.exists():
-            console.print(f"[red]Error:[/] ファイルが見つかりません: {source}")
+            console.print(
+                f"[red]Error:[/] ファイルが見つかりません: {source}\n"
+                "ローカル動画のパスを確認してください。使い方の例は `uv run lol-tools examples` で確認できます。"
+            )
             raise typer.Exit(1)
         asyncio.run(
             _analyze_local(
@@ -159,7 +171,10 @@ async def _analyze_youtube(
         console.print(f"[green]字幕セグメント:[/] {len(transcript)}件")
 
         if not transcript:
-            console.print("[yellow]字幕が取得できませんでした。分析を中止します。[/]")
+            console.print(
+                "[yellow]字幕が取得できませんでした。分析を中止します。[/]\n"
+                "[yellow]字幕がない動画は `--download --mode gameplay` を試してください。[/]"
+            )
             return
 
         progress.update(task, description="ストーリーボードを取得中...")

@@ -19,3 +19,4 @@ tags: [ADR, アーキテクチャ, インデックス]
 | [ADR-006](ADR-006-role-based-thresholds.md) | ロール別閾値による改善点検出 | lol_review | Accepted |
 | [ADR-007](ADR-007-html-report-generation.md) | HTML レポート生成（Jinja2） | 全体 | Accepted |
 | [ADR-008](ADR-008-local-video-pipeline.md) | ローカル動画処理パイプライン | lol_vod_analyzer | Accepted |
+| [ADR-009](ADR-009-first-run-onboarding.md) | 初回ユーザー導線の統一 | 全体 | Accepted |

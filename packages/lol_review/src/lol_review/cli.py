@@ -44,8 +44,10 @@ def report(riot_id: str | None, count: int, ranked_only: bool, no_open: bool) ->
             "エラー: Riot ID は 'ゲーム名#タグライン' の形式で指定してください。",
             err=True,
         )
-        click.echo("例: lol-review report \"SummonerName#JP1\"", err=True)
-        click.echo("または .env に DEFAULT_RIOT_ID=ゲーム名#タグライン を設定", err=True)
+        click.echo("例: uv run lol-tools review \"SummonerName#JP1\"", err=True)
+        click.echo("または .env に DEFAULT_RIOT_ID=ゲーム名#タグライン を設定してください。", err=True)
+        click.echo("設定確認: uv run lol-tools doctor", err=True)
+        click.echo("対話式セットアップ: uv run lol-tools init", err=True)
         raise click.Abort()
 
     game_name, tag_line = riot_id.rsplit("#", 1)
@@ -53,9 +55,11 @@ def report(riot_id: str | None, count: int, ranked_only: bool, no_open: bool) ->
     api_key = os.environ.get("RIOT_API_KEY")
     if not api_key:
         click.echo("エラー: RIOT_API_KEY が設定されていません。", err=True)
-        click.echo("次のいずれかの方法で API キーを設定してください:", err=True)
-        click.echo(f"  1. リポジトリルートの .env に RIOT_API_KEY=<your_key> を追記", err=True)
-        click.echo("  2. 環境変数として export RIOT_API_KEY=<your_key>", err=True)
+        click.echo("次のいずれかで設定してください:", err=True)
+        click.echo("  1. uv run lol-tools init", err=True)
+        click.echo("  2. リポジトリルートの .env に RIOT_API_KEY=<your_key> を追記", err=True)
+        click.echo("  3. 環境変数として export RIOT_API_KEY=<your_key>", err=True)
+        click.echo("設定確認: uv run lol-tools doctor", err=True)
         raise click.Abort()
 
     if count is None:
