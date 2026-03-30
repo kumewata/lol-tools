@@ -24,27 +24,32 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("riot_id")
+@click.argument("riot_id", required=False, default=None)
 @click.option("--count", default=None, type=int, help="取得する試合数 (default: .envのDEFAULT_COUNTまたは20)")
 @click.option("--ranked-only", is_flag=True, help="ランク戦のみ")
 @click.option("--no-open", is_flag=True, help="ブラウザを開かない")
-def report(riot_id: str, count: int, ranked_only: bool, no_open: bool) -> None:
+def report(riot_id: str | None, count: int, ranked_only: bool, no_open: bool) -> None:
     """指定した Riot ID のマッチレポートを生成します。
 
     RIOT_ID は "ゲーム名#タグライン" の形式で指定してください。
+    省略すると .env の DEFAULT_RIOT_ID を使用します。
     例: lol-review report "SummonerName#JP1"
     """
-    if "#" not in riot_id:
+    load_dotenv(_ENV_PATH)
+
+    if riot_id is None:
+        riot_id = os.environ.get("DEFAULT_RIOT_ID", "")
+    if not riot_id or "#" not in riot_id:
         click.echo(
             "エラー: Riot ID は 'ゲーム名#タグライン' の形式で指定してください。",
             err=True,
         )
         click.echo("例: lol-review report \"SummonerName#JP1\"", err=True)
+        click.echo("または .env に DEFAULT_RIOT_ID=ゲーム名#タグライン を設定", err=True)
         raise click.Abort()
 
     game_name, tag_line = riot_id.rsplit("#", 1)
 
-    load_dotenv(_ENV_PATH)
     api_key = os.environ.get("RIOT_API_KEY")
     if not api_key:
         click.echo("エラー: RIOT_API_KEY が設定されていません。", err=True)

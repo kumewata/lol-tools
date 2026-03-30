@@ -22,7 +22,7 @@ app.add_typer(vod_app, name="vod", help="動画分析 (VOD analysis)")
 
 @app.command()
 def review(
-    riot_id: str = typer.Argument(help="Riot ID（例: SummonerName#JP1）"),
+    riot_id: str | None = typer.Argument(None, help="Riot ID（例: SummonerName#JP1）省略時は .env の DEFAULT_RIOT_ID"),
     count: int | None = typer.Option(None, help="取得する試合数"),
     ranked_only: bool = typer.Option(False, "--ranked-only", help="ランク戦のみ"),
     no_open: bool = typer.Option(False, "--no-open", help="ブラウザを開かない"),
@@ -33,7 +33,9 @@ def review(
     from lol_review.cli import report as _click_report
 
     # Build Click-compatible args
-    args = [riot_id]
+    args: list[str] = []
+    if riot_id is not None:
+        args.append(riot_id)
     if count is not None:
         args.extend(["--count", str(count)])
     if ranked_only:
