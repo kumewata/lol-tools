@@ -121,14 +121,11 @@ uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --download --mode
 自分の試合録画を対象にした、もっとも精度の高いプレイ分析フロー。
 
 ```bash
-# 1. 先に直近1試合の試合データを取得
-uv run lol-tools review --count 1 --no-open
+# 標準フロー: replay analyze が試合データ取得と動画分析をつなぐ
+uv run lol-tools replay analyze ~/Desktop/replay.mov
 
-# 2. 試合データを添えて動画分析
-uv run lol-tools vod analyze ~/Desktop/replay.mov \
-  --mode gameplay \
-  --interval 5 \
-  --match-data packages/lol_review/output/latest_findings.json
+# 少し前の試合を選ぶ
+uv run lol-tools replay analyze ~/Desktop/replay.mov --review-count 5 --match-index 2
 ```
 
 ## プレイ動画分析の標準ワークフロー
@@ -142,11 +139,8 @@ uv run lol-tools review --count 1 --no-open
 # 2. LoL クライアントでリプレイを再生し、ffmpeg で録画
 ffmpeg -f avfoundation -i "1:none" -t 900 -r 10 -vf scale=1280:720 ~/Desktop/replay.mov
 
-# 3. プレイ動画分析
-uv run lol-tools vod analyze ~/Desktop/replay.mov \
-  --mode gameplay \
-  --interval 5 \
-  --match-data packages/lol_review/output/latest_findings.json
+# 3. replay analyze で試合データ付き分析
+uv run lol-tools replay analyze ~/Desktop/replay.mov
 ```
 
 `"1"` は画面番号。環境に応じて `ffmpeg -f avfoundation -list_devices true -i ""` で確認する。
@@ -199,6 +193,7 @@ uv run pytest
 
 - 統一入口: `uv run lol-tools`
 - 試合データ分析: `review`
+- 自分のリプレイ動画分析: `replay analyze <動画パス>`
 - 動画分析: `vod analyze`
 - 解説動画分析: `vod analyze <YouTube URL> --mode commentary`
 - プレイ動画分析: `vod analyze <動画パス> --mode gameplay`

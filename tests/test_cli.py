@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -89,6 +90,7 @@ def test_examples_prints_primary_commands() -> None:
     assert result.exit_code == 0
     assert "uv run lol-tools init" in result.output
     assert 'uv run lol-tools review "SummonerName#JP1"' in result.output
+    assert "uv run lol-tools replay analyze" in result.output
     assert "uv run lol-tools vod analyze" in result.output
 
 
@@ -106,3 +108,94 @@ def test_vod_analyze_help_includes_quick_examples() -> None:
     assert result.exit_code == 0
     assert "uv run lol-tools vod analyze" in result.output
     assert "uv run lol-tools examples" in result.output
+
+
+def test_replay_analyze_selects_requested_match(tmp_path: Path, monkeypatch) -> None:
+    video_path = tmp_path / "replay.mov"
+    video_path.write_text("dummy", encoding="utf-8")
+    findings_path = tmp_path / "latest_findings.json"
+    findings_path.write_text(
+        json.dumps(
+            {
+                "matches": [
+                    {"match_id": "match-1", "champion": "Ahri", "role": "MIDDLE", "queue_type": "RANKED_SOLO", "timestamp_ms": 1},
+                    {"match_id": "match-2", "champion": "Viego", "role": "JUNGLE", "queue_type": "RANKED_SOLO", "timestamp_ms": 2},
+                ],
+                "player_stats": [
+                    {"match_id": "match-1", "kill_timestamps": []},
+                    {"match_id": "match-2", "kill_timestamps": [1000]},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli, "_resolve_default_riot_id", lambda riot_id: "Player#JP1")
+    monkeypatch.setattr(cli, "_run_review_for_replay", lambda riot_id, review_count: findings_path)
+
+    captured: dict[str, object] = {}
+
+    def fake_run_vod(video_path: Path, match_data_path: Path, interval: int, no_open: bool) -> None:
+        captured["video_path"] = video_path
+        captured["interval"] = interval
+        captured["no_open"] = no_open
+        captured["match_data"] = json.loads(match_data_path.read_text(encoding="utf-8"))
+
+    monkeypatch.setattr(cli, "_run_vod_gameplay_for_replay", fake_run_vod)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "replay",
+            "analyze",
+            str(video_path),
+            "--review-count",
+            "5",
+            "--match-index",
+            "1",
+            "--interval",
+            "7",
+            "--no-open",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["video_path"] == video_path
+    assert captured["interval"] == 7
+    assert captured["no_open"] is True
+    assert captured["match_data"] == {
+        "matches": [
+            {"match_id": "match-2", "champion": "Viego", "role": "JUNGLE", "queue_type": "RANKED_SOLO", "timestamp_ms": 2},
+        ],
+        "player_stats": [
+            {"match_id": "match-2", "kill_timestamps": [1000]},
+        ],
+    }
+
+
+def test_replay_analyze_rejects_out_of_range_match_index(tmp_path: Path, monkeypatch) -> None:
+    video_path = tmp_path / "replay.mov"
+    video_path.write_text("dummy", encoding="utf-8")
+    findings_path = tmp_path / "latest_findings.json"
+    findings_path.write_text(
+        json.dumps(
+            {
+                "matches": [{"match_id": "match-1"}],
+                "player_stats": [{"match_id": "match-1"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli, "_resolve_default_riot_id", lambda riot_id: "Player#JP1")
+    monkeypatch.setattr(cli, "_run_review_for_replay", lambda riot_id, review_count: findings_path)
+
+    result = runner.invoke(
+        cli.app,
+        ["replay", "analyze", str(video_path), "--match-index", "2"],
+    )
+
+    assert result.exit_code == 1
+    assert "match-index 2 は範囲外" in result.output

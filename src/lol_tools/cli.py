@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -23,10 +26,12 @@ app = typer.Typer(
     help="League of Legends 上達支援ツール群",
     rich_markup_mode="markdown",
 )
+replay_app = typer.Typer(help="自分のリプレイ動画分析")
 
 
 # Mount lol_vod_analyzer as "vod" subcommand
 app.add_typer(vod_app, name="vod", help="動画分析（解説動画・プレイ動画）")
+app.add_typer(replay_app, name="replay", help="自分のリプレイ動画分析")
 
 
 def _load_env() -> None:
@@ -140,6 +145,103 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
     ]
 
 
+def _resolve_default_riot_id(riot_id: str | None) -> str:
+    _load_env()
+
+    resolved = riot_id or os.environ.get("DEFAULT_RIOT_ID", "")
+    if not _is_valid_riot_id(resolved):
+        console.print("[red]Error:[/] Riot ID は `ゲーム名#タグライン` 形式で指定してください。")
+        console.print("例: `uv run lol-tools replay analyze ~/Desktop/replay.mov --riot-id \"SummonerName#JP1\"`")
+        console.print("または `.env` に `DEFAULT_RIOT_ID=ゲーム名#タグライン` を設定してください。")
+        console.print("設定確認: `uv run lol-tools doctor`")
+        console.print("対話式セットアップ: `uv run lol-tools init`")
+        raise typer.Exit(1)
+
+    return resolved
+
+
+def _latest_findings_path() -> Path:
+    return REPO_ROOT / "packages" / "lol_review" / "output" / "latest_findings.json"
+
+
+def _run_review_for_replay(riot_id: str, review_count: int) -> Path:
+    from lol_review.cli import report as click_report
+
+    click_report.main(
+        [riot_id, "--count", str(review_count), "--no-open"],
+        standalone_mode=False,
+    )
+
+    findings_path = _latest_findings_path()
+    if not findings_path.exists():
+        console.print("[red]Error:[/] 試合データ JSON の生成に失敗しました。")
+        raise typer.Exit(1)
+    return findings_path
+
+
+def _build_selected_match_findings(findings: dict, match_index: int) -> dict:
+    matches = findings.get("matches", [])
+    player_stats = findings.get("player_stats", [])
+
+    if not matches:
+        console.print("[red]Error:[/] 試合データが見つかりませんでした。")
+        raise typer.Exit(1)
+
+    if match_index >= len(matches):
+        console.print(
+            f"[red]Error:[/] match-index {match_index} は範囲外です。"
+            f"取得できた試合数は {len(matches)} 件です。"
+        )
+        raise typer.Exit(1)
+
+    selected = dict(findings)
+    selected["matches"] = [matches[match_index]]
+    selected["player_stats"] = [player_stats[match_index]] if match_index < len(player_stats) else []
+    return selected
+
+
+def _write_selected_match_data(findings: dict) -> Path:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".json",
+        prefix="lol_tools_replay_",
+        delete=False,
+        encoding="utf-8",
+    ) as tmp:
+        json.dump(findings, tmp, ensure_ascii=False, indent=2)
+        tmp.write("\n")
+        return Path(tmp.name)
+
+
+def _run_vod_gameplay_for_replay(
+    video_path: Path,
+    match_data_path: Path,
+    interval: int,
+    no_open: bool,
+) -> None:
+    from lol_vod_analyzer.main import analyze as vod_analyze
+
+    vod_analyze(
+        source=str(video_path),
+        mode="gameplay",
+        no_open=no_open,
+        interval=interval,
+        match_data=str(match_data_path),
+    )
+
+
+def _format_match_label(match_data: dict) -> str:
+    champion = match_data.get("champion", "Unknown")
+    role = match_data.get("role", "Unknown")
+    queue_type = match_data.get("queue_type", "Unknown")
+    timestamp_ms = match_data.get("timestamp_ms")
+
+    if isinstance(timestamp_ms, int):
+        played_at = datetime.fromtimestamp(timestamp_ms / 1000).strftime("%Y-%m-%d %H:%M")
+        return f"{champion} / {role} / {queue_type} / {played_at}"
+    return f"{champion} / {role} / {queue_type}"
+
+
 @app.command()
 def review(
     riot_id: str | None = typer.Argument(None, help="Riot ID（例: SummonerName#JP1）省略時は .env の DEFAULT_RIOT_ID"),
@@ -170,6 +272,44 @@ def review(
         args.append("--no-open")
 
     _click_report.main(args, standalone_mode=False)
+
+
+@replay_app.command("analyze")
+def replay_analyze(
+    video_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="自分のリプレイ録画ファイル"),
+    riot_id: str | None = typer.Option(None, "--riot-id", help="Riot ID（省略時は .env の DEFAULT_RIOT_ID）"),
+    review_count: int = typer.Option(5, "--review-count", min=1, help="直近何試合を候補として取得するか"),
+    match_index: int = typer.Option(0, "--match-index", min=0, help="候補のうち何番目の試合を使うか。0 が最新"),
+    interval: int = typer.Option(5, min=1, help="スクリーンショット間隔（秒）"),
+    no_open: bool = typer.Option(False, "--no-open", help="ブラウザを開かない"),
+) -> None:
+    """自分のリプレイ動画を試合データ付きで分析します。
+
+    例:
+    `uv run lol-tools replay analyze ~/Desktop/replay.mov`
+    `uv run lol-tools replay analyze ~/Desktop/replay.mov --review-count 5 --match-index 2`
+    """
+    resolved_riot_id = _resolve_default_riot_id(riot_id)
+    console.print(f"[bold]Replay Analyze[/] {video_path}")
+    console.print(f"試合候補を取得中: {resolved_riot_id}（直近 {review_count} 件）")
+
+    findings_path = _run_review_for_replay(resolved_riot_id, review_count)
+    findings = json.loads(findings_path.read_text(encoding="utf-8"))
+    selected_findings = _build_selected_match_findings(findings, match_index)
+    selected_match = selected_findings["matches"][0]
+
+    console.print(f"選択した試合: {_format_match_label(selected_match)}")
+
+    temp_match_data_path = _write_selected_match_data(selected_findings)
+    try:
+        _run_vod_gameplay_for_replay(
+            video_path=video_path,
+            match_data_path=temp_match_data_path,
+            interval=interval,
+            no_open=no_open,
+        )
+    finally:
+        temp_match_data_path.unlink(missing_ok=True)
 
 
 @app.command()
@@ -289,6 +429,9 @@ def examples() -> None:
     console.print("\n[bold]Match Review[/]")
     console.print('uv run lol-tools review "SummonerName#JP1"')
     console.print("uv run lol-tools review --count 1 --no-open")
+    console.print("\n[bold]Replay Analysis[/]")
+    console.print("uv run lol-tools replay analyze ~/Desktop/replay.mov")
+    console.print("uv run lol-tools replay analyze ~/Desktop/replay.mov --review-count 5 --match-index 2")
     console.print("\n[bold]VOD Analysis: Commentary[/]")
     console.print("uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --mode commentary")
     console.print("\n[bold]VOD Analysis: Gameplay[/]")
