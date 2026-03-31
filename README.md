@@ -1,5 +1,7 @@
 # lol-tools
 
+[![CI](https://github.com/kumewata/lol-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/kumewata/lol-tools/actions/workflows/ci.yml)
+
 League of Legends の試合データ分析と動画分析を、1つの CLI から扱うツール集。
 
 ## このリポジトリでできること
