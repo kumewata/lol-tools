@@ -126,7 +126,7 @@ def analyze(
     if not api_key:
         console.print(
             "[red]Error:[/] GOOGLE_API_KEY が設定されていません。\n"
-            "次のいずれかで設定してください。\n"
+            "通常は `.env` に設定してください。\n"
             "1. `uv run lol-tools init`\n"
             "2. `.env` に `GOOGLE_API_KEY=<your_key>` を追記\n"
             "3. 確認は `uv run lol-tools doctor`"

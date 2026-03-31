@@ -112,14 +112,14 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
         (
             "RIOT_API_KEY",
             bool(os.environ.get("RIOT_API_KEY")),
-            "未設定です。試合データ分析には `.env` に RIOT_API_KEY が必要です。"
+            "未設定です。通常は `.env` に RIOT_API_KEY を設定してください。"
             if not os.environ.get("RIOT_API_KEY")
             else "試合データ分析を実行できます。",
         ),
         (
             "GOOGLE_API_KEY",
             bool(os.environ.get("GOOGLE_API_KEY")),
-            "未設定です。動画分析には `.env` に GOOGLE_API_KEY が必要です。"
+            "未設定です。通常は `.env` に GOOGLE_API_KEY を設定してください。"
             if not os.environ.get("GOOGLE_API_KEY")
             else "動画分析を実行できます。",
         ),

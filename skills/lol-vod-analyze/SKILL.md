@@ -10,7 +10,7 @@ LoL の解説動画・コーチング動画・プレイ動画を AI で分析し
 ## 前提
 
 - ツールは `packages/lol_vod_analyzer/` にある
-- ルートの `.env` に `GOOGLE_API_KEY` が設定済みであること
+- 通常はルートの `.env` に `GOOGLE_API_KEY` が設定済みであること
 - YouTube 動画は字幕（自動生成含む）とストーリーボード画像、またはダウンロードした動画から分析する
 - ローカル動画ファイルも入力できる
 - `--match-data` を使うと `lol-review` の試合データと結合できる
@@ -89,6 +89,6 @@ HTMLの中に以下のセクションがある:
 ## トラブルシューティング
 
 - **字幕が取得できない場合** — YouTube 字幕が無い可能性がある。`--download --mode gameplay` かローカル動画分析に切り替える
-- **GOOGLE_API_KEY エラー** — ルートの `.env` に API キーが設定されているか確認
+- **GOOGLE_API_KEY エラー** — まずルートの `.env` に API キーが設定されているか確認
 - **match-data エラー** — JSON パスが存在するか、`packages/lol_review/output/latest_findings.json` を使えるか確認
 - **yt-dlp エラー** — `uv pip install --upgrade yt-dlp` で更新を試す
