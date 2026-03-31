@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from lol_vod_analyzer.main import app as vod_app
+from lol_vod_analyzer.system_tools import install_hint
 
 # Repo root = src/lol_tools/cli.py -> src/lol_tools -> src -> lol-tools/
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -98,6 +99,7 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
     _load_env()
 
     ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
     review_output_dir = REPO_ROOT / "packages" / "lol_review" / "output"
     vod_output_dir = REPO_ROOT / "packages" / "lol_vod_analyzer" / "output"
 
@@ -133,9 +135,18 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
         (
             "ffmpeg",
             ffmpeg_path is not None,
-            "見つかりません。ローカル動画分析を使うなら ffmpeg をインストールしてください。"
+            "見つかりません。ローカル動画の音声抽出や録画例を使うなら導入してください。 "
+            + install_hint("ffmpeg")
             if ffmpeg_path is None
             else f"実行ファイル: {ffmpeg_path}",
+        ),
+        (
+            "ffprobe",
+            ffprobe_path is not None,
+            "見つかりません。ローカル動画分析には ffprobe が必要です。 "
+            + install_hint("ffprobe")
+            if ffprobe_path is None
+            else f"実行ファイル: {ffprobe_path}",
         ),
         (
             "出力先",
@@ -445,7 +456,9 @@ def doctor() -> None:
     """初回セットアップに必要な設定と依存を診断します。"""
     checks = _doctor_checks()
     has_review_ready = all(ok for name, ok, _ in checks if name in {".env", "RIOT_API_KEY"})
-    has_vod_ready = all(ok for name, ok, _ in checks if name in {".env", "GOOGLE_API_KEY"})
+    has_google_api_key = any(ok for name, ok, _ in checks if name == "GOOGLE_API_KEY")
+    has_ffprobe = any(ok for name, ok, _ in checks if name == "ffprobe")
+    has_vod_ready = all(ok for name, ok, _ in checks if name in {".env", "GOOGLE_API_KEY", "ffprobe"})
     has_default_riot_id = any(ok for name, ok, _ in checks if name == "DEFAULT_RIOT_ID")
 
     console.print("[bold]lol-tools doctor[/]")
@@ -458,7 +471,9 @@ def doctor() -> None:
     else:
         console.print("- 試合データ分析: `uv run lol-tools review \"SummonerName#JP1\"`")
     if has_vod_ready:
-        console.print("- 動画分析: `uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay`")
+        console.print("- 動画分析: `uv run lol-tools vod analyze path/to/replay.mp4 --mode gameplay`")
+    elif has_google_api_key and not has_ffprobe:
+        console.print("- 動画分析: YouTube 字幕分析は使えます。ローカル動画分析には `ffprobe` が必要です。")
     else:
         console.print("- 動画分析の前に: `.env` に `GOOGLE_API_KEY` を設定")
 
@@ -468,22 +483,21 @@ def examples() -> None:
     """代表的な実行例を表示します。"""
     console.print("[bold]Quick Start[/]")
     console.print("uv sync")
-    console.print("cp .env.example .env")
     console.print("uv run lol-tools init")
     console.print("uv run lol-tools doctor")
     console.print("\n[bold]Match Review[/]")
     console.print('uv run lol-tools review "SummonerName#JP1"')
     console.print("uv run lol-tools review --count 1 --no-open")
     console.print("\n[bold]Replay Analysis[/]")
-    console.print("uv run lol-tools replay analyze ~/Desktop/replay.mov")
-    console.print("uv run lol-tools replay analyze ~/Desktop/replay.mov --review-count 5 --match-index 2")
+    console.print("uv run lol-tools replay analyze path/to/replay.mp4")
+    console.print("uv run lol-tools replay analyze path/to/replay.mp4 --review-count 5 --match-index 2")
     console.print("\n[bold]Export Match Data[/]")
     console.print("uv run lol-tools export-match-data --match-index 1")
     console.print("\n[bold]VOD Analysis: Commentary[/]")
     console.print("uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --mode commentary")
     console.print("\n[bold]VOD Analysis: Gameplay[/]")
-    console.print("uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5")
-    console.print("uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5 --match-data packages/lol_review/output/match_data_YYYYMMDD_HHMMSS.json")
+    console.print("uv run lol-tools vod analyze path/to/replay.mp4 --mode gameplay --interval 5")
+    console.print("uv run lol-tools vod analyze path/to/replay.mp4 --mode gameplay --interval 5 --match-data packages/lol_review/output/match_data_YYYYMMDD_HHMMSS.json")
 
 
 if __name__ == "__main__":

@@ -5,24 +5,29 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 from google import genai
 from PIL import Image
 
 from lol_vod_analyzer.models import SceneSnapshot, TranscriptSegment, VideoSource
+from lol_vod_analyzer.system_tools import format_missing_tools_message
 
 
 def get_video_metadata(video_path: Path) -> VideoSource:
     """Extract metadata from a local video file using ffprobe."""
-    result = subprocess.run(
-        [
-            "ffprobe", "-v", "quiet", "-print_format", "json",
-            "-show_format", str(video_path),
-        ],
-        capture_output=True, text=True, check=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet", "-print_format", "json",
+                "-show_format", str(video_path),
+            ],
+            capture_output=True, text=True, check=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            format_missing_tools_message(["ffprobe"], "ローカル動画のメタデータ取得")
+        ) from exc
     info = json.loads(result.stdout)
     duration = int(float(info["format"]["duration"]))
     return VideoSource(
@@ -41,14 +46,19 @@ def extract_audio(video_path: Path, output_dir: Path) -> Path | None:
     output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     safe_stem = Path(video_path.name).stem  # strip directory components
     audio_path = output_dir / f"{safe_stem}.m4a"
-    result = subprocess.run(
-        [
-            "ffmpeg", "-i", str(video_path),
-            "-vn", "-acodec", "aac", "-y",
-            str(audio_path),
-        ],
-        capture_output=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-i", str(video_path),
+                "-vn", "-acodec", "aac", "-y",
+                str(audio_path),
+            ],
+            capture_output=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            format_missing_tools_message(["ffmpeg"], "ローカル動画からの音声抽出")
+        ) from exc
     if result.returncode != 0:
         return None
     return audio_path

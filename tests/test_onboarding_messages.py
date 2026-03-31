@@ -57,3 +57,17 @@ def test_vod_missing_local_file_mentions_examples(monkeypatch) -> None:
 
     assert result.exit_code != 0
     assert "uv run lol-tools examples" in result.output
+
+
+def test_vod_local_analysis_reports_missing_tools(tmp_path: Path, monkeypatch) -> None:
+    video_path = tmp_path / "replay.mp4"
+    video_path.write_text("dummy", encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_API_KEY", "dummy-key")
+    monkeypatch.setattr(vod_module, "missing_tools", lambda tools: ["ffprobe", "ffmpeg"])
+
+    result = runner.invoke(root_cli.app, ["vod", "analyze", str(video_path)])
+
+    assert result.exit_code != 0
+    assert "ffprobe" in result.output
+    assert "ffmpeg" in result.output
+    assert "lol-tools doctor" in result.output

@@ -82,6 +82,27 @@ def test_doctor_reports_missing_env(tmp_path: Path, monkeypatch) -> None:
     assert "NG" in result.output
     assert "cp .env.example .env" in result.output
     assert "GOOGLE_API_KEY" in result.output
+    assert "ffprobe" in result.output
+
+
+def test_doctor_mentions_ffprobe_when_google_api_key_is_present(tmp_path: Path, monkeypatch) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("GOOGLE_API_KEY=test-key\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "ENV_PATH", env_path)
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
+    monkeypatch.delenv("RIOT_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda tool: "/usr/bin/ffmpeg" if tool == "ffmpeg" else None,
+    )
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "YouTube 字幕分析は使えます" in result.output
+    assert "ffprobe" in result.output
 
 
 def test_examples_prints_primary_commands() -> None:
@@ -109,6 +130,13 @@ def test_vod_analyze_help_includes_quick_examples() -> None:
     assert result.exit_code == 0
     assert "uv run lol-tools vod analyze" in result.output
     assert "uv run lol-tools examples" in result.output
+
+
+def test_examples_use_portable_video_paths() -> None:
+    result = runner.invoke(cli.app, ["examples"])
+
+    assert result.exit_code == 0
+    assert "path/to/replay.mp4" in result.output
 
 
 def test_replay_analyze_selects_requested_match(tmp_path: Path, monkeypatch) -> None:
