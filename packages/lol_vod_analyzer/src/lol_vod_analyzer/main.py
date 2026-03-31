@@ -30,6 +30,11 @@ from lol_vod_analyzer.local_video import (
 )
 from lol_vod_analyzer.models import SceneSnapshot, VideoSource
 from lol_vod_analyzer.report import generate_report
+from lol_vod_analyzer.system_tools import (
+    format_missing_tools_message,
+    missing_tools,
+    required_local_video_tools,
+)
 
 app = typer.Typer(help="LoL VOD Analysis Tool", rich_markup_mode="markdown")
 console = Console()
@@ -301,13 +306,23 @@ async def _analyze_local(
     original_url: str | None = None,
 ) -> None:
     """Analyze a local video file."""
+    needed_tools = required_local_video_tools(mode)
+    missing = missing_tools(needed_tools)
+    if missing:
+        console.print(f"[red]Error:[/] {format_missing_tools_message(missing, 'ローカル動画分析')}")
+        raise typer.Exit(1)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task("動画情報を取得中...", total=None)
-        video_source = get_video_metadata(video_path)
+        try:
+            video_source = get_video_metadata(video_path)
+        except RuntimeError as exc:
+            console.print(f"[red]Error:[/] {exc}")
+            raise typer.Exit(1) from exc
         if original_url:
             video_source.url = original_url
             video_source.source_type = "youtube"
@@ -320,7 +335,11 @@ async def _analyze_local(
         if mode != "gameplay":
             progress.update(task, description="音声を抽出中...")
             audio_dir = PACKAGE_ROOT / "output" / "audio"
-            audio_path = extract_audio(video_path, audio_dir)
+            try:
+                audio_path = extract_audio(video_path, audio_dir)
+            except RuntimeError as exc:
+                console.print(f"[red]Error:[/] {exc}")
+                raise typer.Exit(1) from exc
 
             if audio_path is not None:
                 console.print(f"[green]音声抽出:[/] {audio_path.name}")

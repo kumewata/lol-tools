@@ -26,6 +26,14 @@ class TestGetVideoMetadata:
         assert source.source_type == "local"
         assert source.local_path == Path("/tmp/test.mp4")
 
+    @patch("lol_vod_analyzer.local_video.subprocess.run", side_effect=FileNotFoundError)
+    def test_get_metadata_missing_ffprobe(self, mock_run):
+        with pytest.raises(RuntimeError) as excinfo:
+            get_video_metadata(Path("/tmp/test.mp4"))
+
+        assert "ffprobe" in str(excinfo.value)
+        mock_run.assert_called_once()
+
 
 class TestExtractAudio:
     @patch("lol_vod_analyzer.local_video.subprocess.run")
@@ -37,6 +45,14 @@ class TestExtractAudio:
         args = mock_run.call_args[0][0]
         assert args[0] == "ffmpeg"
         assert "-vn" in args
+
+    @patch("lol_vod_analyzer.local_video.subprocess.run", side_effect=FileNotFoundError)
+    def test_extract_audio_missing_ffmpeg(self, mock_run, tmp_path):
+        with pytest.raises(RuntimeError) as excinfo:
+            extract_audio(Path("/tmp/test.mp4"), tmp_path)
+
+        assert "ffmpeg" in str(excinfo.value)
+        mock_run.assert_called_once()
 
 
 class TestExtractScreenshots:

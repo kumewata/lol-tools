@@ -1,0 +1,7 @@
+interface:
+  display_name: "Replay Recording"
+  short_description: "自分のリプレイ動画の録画手順を案内する"
+  default_prompt: "Use $replay-recording to explain how to prepare a self-recorded League of Legends replay video and connect it to `lol-tools replay analyze`."
+
+policy:
+  allow_implicit_invocation: true

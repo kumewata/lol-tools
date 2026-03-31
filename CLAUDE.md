@@ -8,9 +8,10 @@
 ## Shared Skills
 
 - 共有スキル本体は `skills/` 配下に置く
-- `.claude/skills` は `skills/` への互換リンク
-- `.codex/skills` も `skills/` への互換リンク
+- `.claude/skills` は Claude Code 互換のための同期コピー
+- `.codex/skills` は Codex 互換のための同期コピー
 - Claude Code / Codex のどちら向けの更新でも、編集先は `skills/` を正とする
+- Windows では symlink より実ディレクトリの方が認識が安定しやすいため、互換入口は実ディレクトリで持つ
 
 ## Skill Maintenance
 
@@ -18,7 +19,7 @@
 - Codex 向け UI メタデータは `agents/openai.yaml` に置く
 - 実際の CLI やファイル配置が変わったら、対応するスキル例も一緒に更新する
 - repo 固有のデフォルト値がある場合は、スキル手順に省略時の挙動を明記する
-- スキルを追加したら `.claude/skills` と `.codex/skills` ではなく `skills/` 配下だけを編集する
+- スキルを追加・更新したら、まず `skills/` を編集し、その内容を `.claude/skills/` と `.codex/skills/` に同期する
 
 ## Agent Working Rules
 
