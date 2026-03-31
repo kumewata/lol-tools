@@ -70,6 +70,31 @@ uv run lol-tools doctor
 
 `uv run lol-tools init` は `.env` がなければ自動で作成する。手動で作る場合だけ `.env.example` を `.env` にコピーしてもよい。
 
+#### Windows で `uv` 管理 Python が詰まる場合
+
+Windows では `uv` が管理する Python が App Control / WDAC / Defender などでブロックされることがある。その場合は、`uv` に Python をダウンロードさせる代わりに、通常インストール済みの Python 3.12 を明示して使う方が安定しやすい。
+
+実際に通った確認コマンドと実行コマンドの例:
+
+```powershell
+# Python Launcher から使える Python 一覧を確認
+& "$env:LocalAppData\Programs\Python\Launcher\py.exe" -0p
+
+# 3.12 本体と unicodedata が利用できることを確認
+& "$env:LocalAppData\Programs\Python\Launcher\py.exe" -3.12 -c "import sys,unicodedata; print(sys.executable); print(sys.version); print(unicodedata.unidata_version)"
+
+# 例: C:\Users\<you>\AppData\Local\Programs\Python\Python312\python.exe が見つかった場合
+uv sync -p "$env:LocalAppData\Programs\Python\Python312\python.exe" --refresh
+
+# キャッシュ権限エラーも同時に疑うなら no-cache を付ける
+uv sync -p "$env:LocalAppData\Programs\Python\Python312\python.exe" --refresh --no-cache
+
+uv run lol-tools init
+uv run lol-tools doctor
+```
+
+`uv run lol-tools review` 実行時に `ImportError: DLL load failed ... アプリケーション制御ポリシーによってこのファイルがブロックされました` のようなエラーが出る場合も、同様に通常インストール版 Python 3.12 に切り替えると回避できることが多い。
+
 `.env` には必要に応じて以下を設定する。
 
 ```dotenv
@@ -145,6 +170,36 @@ uv run lol-tools replay analyze path/to/replay.mp4
 uv run lol-tools replay analyze path/to/replay.mp4 --review-count 5 --match-index 2
 ```
 
+### Windows で実際に通ったコマンド例
+
+Windows で `review` → `export-match-data` → `vod analyze` を通す場合は、次のように症状ごとの切り分けがしやすい。
+
+レビュー実行例:
+
+```powershell
+uv run --no-cache lol-tools review --count 5 --no-open
+```
+
+複数試合のレビュー結果から動画分析向けの単一試合 JSON を作る例:
+
+```powershell
+$env:PYTHONUTF8='1'
+uv run --no-cache lol-tools export-match-data --input "C:\Users\<you>\Desktop\lol-tools\packages\lol_review\output\latest_findings.json" --match-index 2 --output "C:\Users\<you>\Desktop\lol-tools\packages\lol_review\output\match_data_index2.json"
+```
+
+VOD 分析の実行例:
+
+```powershell
+$env:PYTHONUTF8='1'
+uv run --no-cache lol-tools vod analyze "C:\Users\<you>\Downloads\lol_replay_5min.mov" --mode gameplay --interval 5 --match-data "C:\Users\<you>\Desktop\lol-tools\packages\lol_review\output\match_data_index2.json" --no-open
+```
+
+生成された HTML レポートを開く例:
+
+```powershell
+start "" "C:\Users\<you>\Desktop\lol-tools\packages\lol_vod_analyzer\output\vod_analysis_YYYYMMDD_HHMMSS.html"
+```
+
 ## プレイ動画分析の標準ワークフロー
 
 このワークフローは、自分の試合を Riot API の試合データと紐付けて分析できる前提のため、プレイ動画分析の中では標準機能として扱う。
@@ -196,6 +251,13 @@ uv run lol-tools examples
 - Windows なら `winget install Gyan.FFmpeg` または `choco install ffmpeg`
 - `ffprobe` も通常は同梱される。`uv run lol-tools doctor` で両方確認する
 - セットアップ後に `uv run lol-tools doctor` で再確認する
+
+### Windows で `uv sync` や `uv run` が Python の DLL 読み込みで失敗する
+
+- `uv` 管理 Python ではなく、通常インストール版 Python 3.12 を `uv sync -p "<python.exe>" --refresh` で明示する
+- `py.exe -0p` と `py.exe -3.12 -c "import unicodedata"` で使う Python を確認する
+- キャッシュや権限の切り分けには `--no-cache` を付ける
+- Windows で文字化けや文字コード周りが怪しいときは、必要に応じて `$env:PYTHONUTF8='1'` を付けてコマンドを再実行する
 
 ### どのコマンドから始めればよいか分からない
 
