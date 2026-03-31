@@ -1,0 +1,7 @@
+interface:
+  display_name: "ADR"
+  short_description: "設計判断を ADR として整理・記録する"
+  default_prompt: "Use $adr to draft or update an Architecture Decision Record from this repository context."
+
+policy:
+  allow_implicit_invocation: true

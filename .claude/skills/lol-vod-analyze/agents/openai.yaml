@@ -1,0 +1,7 @@
+interface:
+  display_name: "LoL VOD Analyze"
+  short_description: "LoL 動画を分析して学習ポイントを抽出する"
+  default_prompt: "Use $lol-vod-analyze to analyze a League of Legends VOD or coaching video and summarize actionable lessons."
+
+policy:
+  allow_implicit_invocation: true
