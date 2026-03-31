@@ -335,7 +335,12 @@ class TestParseTimeline:
                     {
                         "timestamp": 0,
                         "participantFrames": {
-                            "1": {"participantId": 1, "totalGold": 500},
+                            "1": {
+                                "participantId": 1,
+                                "totalGold": 500,
+                                "position": {"x": 500, "y": 600},
+                                "jungleMinionsKilled": 0,
+                            },
                             "2": {"participantId": 2, "totalGold": 500},
                         },
                         "events": [],
@@ -343,7 +348,12 @@ class TestParseTimeline:
                     {
                         "timestamp": 60000,
                         "participantFrames": {
-                            "1": {"participantId": 1, "totalGold": 1500},
+                            "1": {
+                                "participantId": 1,
+                                "totalGold": 1500,
+                                "position": {"x": 2000, "y": 2500},
+                                "jungleMinionsKilled": 8,
+                            },
                             "2": {"participantId": 2, "totalGold": 1200},
                         },
                         "events": [
@@ -359,7 +369,12 @@ class TestParseTimeline:
                     {
                         "timestamp": 120000,
                         "participantFrames": {
-                            "1": {"participantId": 1, "totalGold": 3000},
+                            "1": {
+                                "participantId": 1,
+                                "totalGold": 3000,
+                                "position": {"x": 9800, "y": 4400},
+                                "jungleMinionsKilled": 16,
+                            },
                             "2": {"participantId": 2, "totalGold": 2500},
                         },
                         "events": [
@@ -447,6 +462,27 @@ class TestParseTimeline:
         assert len(result.objective_events) >= 1
         types = [e.get("type") for e in result.objective_events]
         assert "ELITE_MONSTER_KILL" in types
+        assert result.objective_events[0]["timestamp"] == 100
+
+    def test_parse_timeline_position_timeline(self):
+        client = make_client()
+        data = self._make_timeline_data()
+        result = client.parse_timeline(data, "KR_99999", "target-puuid", 1)
+        assert result.position_timeline == [
+            {"timestamp": 0, "x": 500, "y": 600},
+            {"timestamp": 60, "x": 2000, "y": 2500},
+            {"timestamp": 120, "x": 9800, "y": 4400},
+        ]
+
+    def test_parse_timeline_jungle_cs_timeline(self):
+        client = make_client()
+        data = self._make_timeline_data()
+        result = client.parse_timeline(data, "KR_99999", "target-puuid", 1)
+        assert result.jungle_cs_timeline == [
+            {"timestamp": 0, "jungle_cs": 0},
+            {"timestamp": 60, "jungle_cs": 8},
+            {"timestamp": 120, "jungle_cs": 16},
+        ]
 
     def test_parse_timeline_gold_diff_simplified(self):
         client = make_client()

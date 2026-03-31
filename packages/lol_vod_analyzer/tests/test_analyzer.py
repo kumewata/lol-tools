@@ -6,6 +6,7 @@ import pytest
 
 from lol_vod_analyzer.analyzer import (
     build_chunk_prompt,
+    build_gameplay_image_prompt,
     build_synthesis_prompt,
     chunk_transcript,
     parse_chunk_response,
@@ -53,6 +54,48 @@ class TestBuildChunkPrompt:
         )
         assert "ルーンの説明です" in prompt
         assert "チャンク 1/3" in prompt
+
+
+class TestBuildGameplayImagePrompt:
+    def test_gameplay_prompt_includes_objective_events_and_positions(self):
+        prompt = build_gameplay_image_prompt(
+            chunk_index=0,
+            total_chunks=1,
+            start_ms=0,
+            end_ms=180000,
+            match_context={
+                "champion": "Elise",
+                "role": "JUNGLE",
+                "ally_team": ["Teemo", "Ahri"],
+                "enemy_team": ["LeeSin", "Jinx"],
+                "lane_opponents": ["LeeSin"],
+                "game_duration_seconds": 1800,
+                "win": True,
+                "kills": 3,
+                "deaths": 1,
+                "assists": 4,
+                "objective_events": [
+                    {
+                        "type": "ELITE_MONSTER_KILL",
+                        "timestamp": 100,
+                        "killerId": 1,
+                        "monsterType": "DRAGON",
+                        "monsterSubType": "CHEMTECH_DRAGON",
+                        "position": {"x": 9800, "y": 4400},
+                    },
+                ],
+                "position_timeline": [
+                    {"timestamp": 60, "x": 2000, "y": 2500},
+                ],
+                "jungle_cs_timeline": [
+                    {"timestamp": 60, "jungle_cs": 8},
+                ],
+            },
+        )
+
+        assert "中立モンスター撃破: DRAGON/CHEMTECH_DRAGON" in prompt
+        assert "座標=(9800, 4400)" in prompt
+        assert "位置スナップショット: 座標=(2000, 2500), jungleCS=8" in prompt
 
 
 class TestParseChunkResponse:

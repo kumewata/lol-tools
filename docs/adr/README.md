@@ -20,3 +20,5 @@ tags: [ADR, アーキテクチャ, インデックス]
 | [ADR-007](ADR-007-html-report-generation.md) | HTML レポート生成（Jinja2） | 全体 | Accepted |
 | [ADR-008](ADR-008-local-video-pipeline.md) | ローカル動画処理パイプライン | lol_vod_analyzer | Accepted |
 | [ADR-009](ADR-009-first-run-onboarding.md) | 初回ユーザー導線の統一 | 全体 | Accepted |
+| [ADR-010](ADR-010-jungle-event-position-context.md) | ジャングルイベントと位置情報の match-data 拡張 | 全体 | Accepted |
+| [ADR-011](ADR-011-single-match-data-for-vod-analysis.md) | 動画分析の match-data を単一試合 JSON に限定する | 全体 | Accepted |

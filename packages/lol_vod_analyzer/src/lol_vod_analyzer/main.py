@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,48 @@ PACKAGE_ROOT = Path(__file__).parent.parent.parent
 _ENV_PATH = PACKAGE_ROOT.parent.parent / ".env"  # repo root .env
 
 
+def _build_match_context(findings: object) -> tuple[dict | None, list[str]]:
+    errors: list[str] = []
+    if not isinstance(findings, dict):
+        return None, ["match-data の形式が不正です"]
+
+    matches = findings.get("matches", [])
+    player_stats = findings.get("player_stats", [])
+
+    if not isinstance(matches, list):
+        return None, ["match-data の matches が不正です"]
+
+    if len(matches) != 1:
+        return None, [
+            "match-data は 1 試合だけを含む JSON である必要があります。"
+            f" 現在は {len(matches)} 試合入っています。"
+            " `lol-tools export-match-data --match-index <N>` か"
+            " `replay analyze --match-index <N>` を使って単一試合 JSON を作ってください。"
+        ]
+
+    if player_stats and (not isinstance(player_stats, list) or len(player_stats) > 1):
+        return None, [
+            "match-data の player_stats も 1 試合分だけを含む必要があります。"
+        ]
+
+    match_context = dict(matches[0])
+    if player_stats and isinstance(player_stats, list):
+        stats = player_stats[0]
+        if isinstance(stats, dict):
+            match_context["kill_timestamps"] = stats.get("kill_timestamps", [])
+            match_context["death_timestamps"] = stats.get("death_timestamps", [])
+            match_context["assist_timestamps"] = stats.get("assist_timestamps", [])
+            match_context["objective_events"] = stats.get("objective_events", [])
+            match_context["item_purchases"] = stats.get("item_purchases", [])
+            match_context["skill_level_ups"] = stats.get("skill_level_ups", [])
+            match_context["level_ups"] = stats.get("level_ups", [])
+            match_context["opponent_level_ups"] = stats.get("opponent_level_ups", [])
+            match_context["position_timeline"] = stats.get("position_timeline", [])
+            match_context["jungle_cs_timeline"] = stats.get("jungle_cs_timeline", [])
+
+    return match_context, errors
+
+
 @app.command()
 def analyze(
     source: str = typer.Argument(help="YouTube URL or local video file path"),
@@ -64,7 +107,6 @@ def analyze(
     # Load match context from lol_review findings JSON if provided
     match_context: dict | None = None
     if match_data:
-        import json
         data_path = Path(match_data).resolve()
         if not data_path.exists():
             console.print(f"[yellow]Warning:[/] {match_data} が見つかりません")
@@ -73,24 +115,12 @@ def analyze(
         else:
             with open(data_path) as f:
                 findings = json.load(f)
-            if not isinstance(findings, dict):
-                console.print("[yellow]Warning:[/] match-data の形式が不正です")
-                findings = {}
-            matches = findings.get("matches", [])
-            player_stats = findings.get("player_stats", [])
-            if matches:
-                match_context = matches[0]  # Use first (latest) match
-                # Merge player_stats timeline data into match_context
-                if player_stats:
-                    stats = player_stats[0]
-                    match_context["kill_timestamps"] = stats.get("kill_timestamps", [])
-                    match_context["death_timestamps"] = stats.get("death_timestamps", [])
-                    match_context["assist_timestamps"] = stats.get("assist_timestamps", [])
-                    match_context["item_purchases"] = stats.get("item_purchases", [])
-                    match_context["skill_level_ups"] = stats.get("skill_level_ups", [])
-                    match_context["level_ups"] = stats.get("level_ups", [])
-                    match_context["opponent_level_ups"] = stats.get("opponent_level_ups", [])
-                console.print(f"[green]試合データ読み込み:[/] {match_context.get('champion')} ({match_context.get('role')})")
+            match_context, errors = _build_match_context(findings)
+            if errors:
+                for error in errors:
+                    console.print(f"[red]Error:[/] {error}")
+                raise typer.Exit(1)
+            console.print(f"[green]試合データ読み込み:[/] {match_context.get('champion')} ({match_context.get('role')})")
 
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:

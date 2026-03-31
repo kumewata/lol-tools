@@ -91,6 +91,7 @@ def test_examples_prints_primary_commands() -> None:
     assert "uv run lol-tools init" in result.output
     assert 'uv run lol-tools review "SummonerName#JP1"' in result.output
     assert "uv run lol-tools replay analyze" in result.output
+    assert "uv run lol-tools export-match-data" in result.output
     assert "uv run lol-tools vod analyze" in result.output
 
 
@@ -199,3 +200,48 @@ def test_replay_analyze_rejects_out_of_range_match_index(tmp_path: Path, monkeyp
 
     assert result.exit_code == 1
     assert "match-index 2 は範囲外" in result.output
+
+
+def test_export_match_data_selects_requested_match(tmp_path: Path) -> None:
+    findings_path = tmp_path / "latest_findings.json"
+    findings_path.write_text(
+        json.dumps(
+            {
+                "matches": [
+                    {"match_id": "match-1", "champion": "Ahri", "role": "MIDDLE", "queue_type": "RANKED_SOLO", "timestamp_ms": 1},
+                    {"match_id": "match-2", "champion": "Viego", "role": "JUNGLE", "queue_type": "RANKED_SOLO", "timestamp_ms": 2},
+                ],
+                "player_stats": [
+                    {"match_id": "match-1", "kill_timestamps": []},
+                    {"match_id": "match-2", "kill_timestamps": [1000]},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "match_data.json"
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "export-match-data",
+            "--input",
+            str(findings_path),
+            "--match-index",
+            "1",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert output_path.exists()
+    assert json.loads(output_path.read_text(encoding="utf-8")) == {
+        "matches": [
+            {"match_id": "match-2", "champion": "Viego", "role": "JUNGLE", "queue_type": "RANKED_SOLO", "timestamp_ms": 2},
+        ],
+        "player_stats": [
+            {"match_id": "match-2", "kill_timestamps": [1000]},
+        ],
+    }

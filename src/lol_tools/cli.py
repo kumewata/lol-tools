@@ -213,6 +213,15 @@ def _write_selected_match_data(findings: dict) -> Path:
         return Path(tmp.name)
 
 
+def _write_match_data_file(findings: dict, output_path: Path) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(findings, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return output_path
+
+
 def _run_vod_gameplay_for_replay(
     video_path: Path,
     match_data_path: Path,
@@ -272,6 +281,42 @@ def review(
         args.append("--no-open")
 
     _click_report.main(args, standalone_mode=False)
+
+
+@app.command("export-match-data")
+def export_match_data(
+    input_path: Path = typer.Option(
+        _latest_findings_path(),
+        "--input",
+        exists=True,
+        dir_okay=False,
+        help="入力となる lol_review findings JSON",
+    ),
+    match_index: int = typer.Option(
+        0,
+        "--match-index",
+        min=0,
+        help="何番目の試合を出力するか。0 が最新",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        dir_okay=False,
+        help="出力先 JSON。省略時は lol_review/output に timestamp 付きで保存",
+    ),
+) -> None:
+    """動画分析向けの単一試合 match-data JSON を出力します。"""
+    findings = json.loads(input_path.read_text(encoding="utf-8"))
+    selected_findings = _build_selected_match_findings(findings, match_index)
+    selected_match = selected_findings["matches"][0]
+
+    if output is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output = REPO_ROOT / "packages" / "lol_review" / "output" / f"match_data_{timestamp}.json"
+
+    saved_path = _write_match_data_file(selected_findings, output)
+    console.print(f"出力した試合: {_format_match_label(selected_match)}")
+    console.print(f"[green]単一試合 match-data を保存[/]: {saved_path}")
 
 
 @replay_app.command("analyze")
@@ -432,11 +477,13 @@ def examples() -> None:
     console.print("\n[bold]Replay Analysis[/]")
     console.print("uv run lol-tools replay analyze ~/Desktop/replay.mov")
     console.print("uv run lol-tools replay analyze ~/Desktop/replay.mov --review-count 5 --match-index 2")
+    console.print("\n[bold]Export Match Data[/]")
+    console.print("uv run lol-tools export-match-data --match-index 1")
     console.print("\n[bold]VOD Analysis: Commentary[/]")
     console.print("uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --mode commentary")
     console.print("\n[bold]VOD Analysis: Gameplay[/]")
     console.print("uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5")
-    console.print("uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5 --match-data packages/lol_review/output/latest_findings.json")
+    console.print("uv run lol-tools vod analyze ~/Desktop/replay.mov --mode gameplay --interval 5 --match-data packages/lol_review/output/match_data_YYYYMMDD_HHMMSS.json")
 
 
 if __name__ == "__main__":

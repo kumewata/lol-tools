@@ -55,6 +55,8 @@ class PlayerStats(BaseModel):
     match_id: str
     gold_timeline: list[int]
     gold_diff_timeline: list[int]
+    position_timeline: list[dict[str, Any]] = []  # {"timestamp": int, "x": int, "y": int}
+    jungle_cs_timeline: list[dict[str, Any]] = []  # {"timestamp": int, "jungle_cs": int}
     kill_timestamps: list[int]
     death_timestamps: list[int]
     assist_timestamps: list[int]

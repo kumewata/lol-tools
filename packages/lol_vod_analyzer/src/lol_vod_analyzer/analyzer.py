@@ -23,6 +23,26 @@ from lol_vod_analyzer.models import (
 MODEL_NAME = "gemini-2.5-flash"
 
 
+def _format_position(position: dict | None) -> str:
+    if not isinstance(position, dict):
+        return ""
+
+    x = position.get("x")
+    y = position.get("y")
+    if not isinstance(x, int) or not isinstance(y, int):
+        return ""
+
+    return f"座標=({x}, {y})"
+
+
+def _format_monster_label(event: dict) -> str:
+    monster_type = event.get("monsterType", "UNKNOWN")
+    monster_subtype = event.get("monsterSubType")
+    if monster_subtype:
+        return f"{monster_type}/{monster_subtype}"
+    return str(monster_type)
+
+
 def chunk_transcript(
     segments: list[TranscriptSegment],
     chunk_duration_ms: int = 180_000,
@@ -211,63 +231,95 @@ def _build_chunk_timeline(
     start_sec: int,
     end_sec: int,
 ) -> str:
-    """Build a timeline of kills, deaths, assists, and item purchases for a time range."""
-    lines: list[str] = []
+    """Build a timeline of trusted Riot events for a time range."""
+    timeline_entries: list[tuple[int, str]] = []
+
+    def add_entry(ts: int, text: str) -> None:
+        if start_sec <= ts < end_sec:
+            timeline_entries.append((ts, text))
 
     # Kill/Death/Assist timestamps
     for ts in match_context.get("kill_timestamps", []):
-        if start_sec <= ts < end_sec:
-            m, s = divmod(ts, 60)
-            lines.append(f"  - {m}:{s:02d} キル獲得")
+        add_entry(ts, "キル獲得")
     for ts in match_context.get("death_timestamps", []):
-        if start_sec <= ts < end_sec:
-            m, s = divmod(ts, 60)
-            lines.append(f"  - {m}:{s:02d} デス")
+        add_entry(ts, "デス")
     for ts in match_context.get("assist_timestamps", []):
-        if start_sec <= ts < end_sec:
-            m, s = divmod(ts, 60)
-            lines.append(f"  - {m}:{s:02d} アシスト")
+        add_entry(ts, "アシスト")
+
+    # Objective events from Riot timeline, including map position when present.
+    for event in match_context.get("objective_events", []):
+        ts = event.get("timestamp", 0)
+        if not isinstance(ts, int) or not (start_sec <= ts < end_sec):
+            continue
+
+        event_type = event.get("type")
+        position_text = _format_position(event.get("position"))
+        if event_type == "ELITE_MONSTER_KILL":
+            monster_label = _format_monster_label(event)
+            killer_id = event.get("killerId", "?")
+            suffix = f" {position_text}" if position_text else ""
+            add_entry(ts, f"中立モンスター撃破: {monster_label}（killerId={killer_id}）{suffix}")
+        elif event_type == "BUILDING_KILL":
+            building_type = event.get("buildingType", "BUILDING")
+            lane_type = event.get("laneType")
+            lane_text = f"/{lane_type}" if lane_type else ""
+            suffix = f" {position_text}" if position_text else ""
+            add_entry(ts, f"建造物破壊: {building_type}{lane_text}{suffix}")
 
     # Item purchases
     for item in match_context.get("item_purchases", []):
         ts = item.get("timestamp", 0)
         if start_sec <= ts < end_sec:
-            m, s = divmod(ts, 60)
             name = item.get("item_name", "不明")
             label = item.get("item_type_label", "")
-            lines.append(f"  - {m}:{s:02d} アイテム購入: {name}（{label}）")
+            add_entry(ts, f"アイテム購入: {name}（{label}）")
 
     # Level ups
     for lvl in match_context.get("level_ups", []):
         ts = lvl.get("timestamp", 0)
         if start_sec <= ts < end_sec:
-            m, s = divmod(ts, 60)
             level = lvl.get("level", "?")
-            lines.append(f"  - {m}:{s:02d} レベル{level}到達")
+            add_entry(ts, f"レベル{level}到達")
 
     # Opponent level ups
     opponents = ", ".join(match_context.get("lane_opponents", []))
     for lvl in match_context.get("opponent_level_ups", []):
         ts = lvl.get("timestamp", 0)
         if start_sec <= ts < end_sec:
-            m, s = divmod(ts, 60)
             level = lvl.get("level", "?")
-            lines.append(f"  - {m}:{s:02d} 対面({opponents})レベル{level}到達")
+            add_entry(ts, f"対面({opponents})レベル{level}到達")
 
     # Skill level ups
     for skill in match_context.get("skill_level_ups", []):
         ts = skill.get("timestamp", 0)
         if start_sec <= ts < end_sec:
-            m, s = divmod(ts, 60)
             slot = skill.get("skill", "?")
             evolve = "（進化）" if skill.get("type") == "EVOLVE" else ""
-            lines.append(f"  - {m}:{s:02d} スキルレベルアップ: {slot}{evolve}")
+            add_entry(ts, f"スキルレベルアップ: {slot}{evolve}")
 
-    if not lines:
+    # Frame-level position snapshots help anchor route reconstruction.
+    for frame in match_context.get("position_timeline", []):
+        ts = frame.get("timestamp", 0)
+        if not isinstance(ts, int) or not (start_sec <= ts < end_sec):
+            continue
+
+        position_text = _format_position(frame)
+        jungle_cs = next(
+            (
+                point.get("jungle_cs")
+                for point in match_context.get("jungle_cs_timeline", [])
+                if point.get("timestamp") == ts
+            ),
+            None,
+        )
+        jungle_text = f", jungleCS={jungle_cs}" if isinstance(jungle_cs, int) else ""
+        suffix = f": {position_text}{jungle_text}" if position_text else f": jungleCS={jungle_cs}" if isinstance(jungle_cs, int) else ""
+        add_entry(ts, f"位置スナップショット{suffix}")
+
+    if not timeline_entries:
         return ""
 
-    # Sort by timestamp string
-    lines.sort()
+    lines = [f"  - {ts // 60}:{ts % 60:02d} {text}" for ts, text in sorted(timeline_entries, key=lambda entry: entry[0])]
     return "\n## このチャンクの時間帯に発生したイベント（確定データ）\n" + "\n".join(lines) + "\n"
 
 

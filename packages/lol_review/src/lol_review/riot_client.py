@@ -229,6 +229,8 @@ class RiotClient:
         frames = timeline_data["info"]["frames"]
 
         gold_timeline: list[int] = []
+        position_timeline: list[dict] = []
+        jungle_cs_timeline: list[dict] = []
         kill_timestamps: list[int] = []
         death_timestamps: list[int] = []
         assist_timestamps: list[int] = []
@@ -246,7 +248,27 @@ class RiotClient:
             # Gold timeline: gold at each minute frame
             participant_frames = frame.get("participantFrames", {})
             if pid_str in participant_frames:
-                gold_timeline.append(participant_frames[pid_str]["totalGold"])
+                participant_frame = participant_frames[pid_str]
+                frame_ts_seconds = frame.get("timestamp", 0) // 1000
+                gold_timeline.append(participant_frame["totalGold"])
+
+                position = participant_frame.get("position")
+                if isinstance(position, dict):
+                    x = position.get("x")
+                    y = position.get("y")
+                    if isinstance(x, int) and isinstance(y, int):
+                        position_timeline.append({
+                            "timestamp": frame_ts_seconds,
+                            "x": x,
+                            "y": y,
+                        })
+
+                jungle_cs = participant_frame.get("jungleMinionsKilled")
+                if isinstance(jungle_cs, int):
+                    jungle_cs_timeline.append({
+                        "timestamp": frame_ts_seconds,
+                        "jungle_cs": jungle_cs,
+                    })
 
             # Events
             for event in frame.get("events", []):
@@ -333,6 +355,8 @@ class RiotClient:
             match_id=match_id,
             gold_timeline=gold_timeline,
             gold_diff_timeline=gold_diff_timeline,
+            position_timeline=position_timeline,
+            jungle_cs_timeline=jungle_cs_timeline,
             kill_timestamps=kill_timestamps,
             death_timestamps=death_timestamps,
             assist_timestamps=assist_timestamps,
