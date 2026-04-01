@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 _BASE_GOLD = 2500
 
 # Exponent for generalised Pythagorean expectation.
-_ALPHA = 5.0
+# Lower values produce smoother probability curves (less saturation at 0%/100%).
+# α=3.0 keeps ~60% of frames in the mid-range vs ~49% at α=5.0.
+_ALPHA = 3.0
 
 
 def compute_win_probability(

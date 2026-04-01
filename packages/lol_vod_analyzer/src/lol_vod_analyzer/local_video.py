@@ -129,7 +129,7 @@ def transcribe_audio(
 
 def _compute_scene_activity(
     video_path: Path,
-    sample_interval: float = 1.0,
+    sample_interval: float = 2.0,
 ) -> list[tuple[float, float]]:
     """Scan the video and return an activity profile.
 
