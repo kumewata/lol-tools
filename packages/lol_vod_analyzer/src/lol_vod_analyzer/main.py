@@ -30,6 +30,7 @@ from lol_vod_analyzer.local_video import (
 )
 from lol_vod_analyzer.models import SceneSnapshot, VideoSource
 from lol_vod_analyzer.report import generate_report
+from lol_vod_analyzer.momentum import compress_match_context
 from lol_vod_analyzer.system_tools import (
     format_missing_tools_message,
     missing_tools,
@@ -82,6 +83,7 @@ def _build_match_context(findings: object) -> tuple[dict | None, list[str]]:
             match_context["opponent_level_ups"] = stats.get("opponent_level_ups", [])
             match_context["position_timeline"] = stats.get("position_timeline", [])
             match_context["jungle_cs_timeline"] = stats.get("jungle_cs_timeline", [])
+            match_context["gold_diff_timeline"] = stats.get("gold_diff_timeline", [])
 
     return match_context, errors
 
@@ -99,6 +101,7 @@ def analyze(
     match_data: Optional[str] = typer.Option(
         None, "--match-data", help="Path to lol_review findings JSON for match context"
     ),
+    adaptive: bool = typer.Option(False, "--adaptive", help="Use adaptive screenshot intervals based on scene activity"),
 ) -> None:
     """Analyze a LoL video and generate an HTML report.
 
@@ -125,6 +128,7 @@ def analyze(
                 for error in errors:
                     console.print(f"[red]Error:[/] {error}")
                 raise typer.Exit(1)
+            match_context = compress_match_context(match_context)
             console.print(f"[green]試合データ読み込み:[/] {match_context.get('champion')} ({match_context.get('role')})")
 
     api_key = os.environ.get("GOOGLE_API_KEY")
@@ -149,6 +153,7 @@ def analyze(
                     api_key=api_key,
                     interval=interval,
                     match_context=match_context,
+                    adaptive=adaptive,
                 )
             )
         else:
@@ -178,6 +183,7 @@ def analyze(
                 api_key=api_key,
                 interval=interval,
                 match_context=match_context,
+                adaptive=adaptive,
             )
         )
 
@@ -266,6 +272,7 @@ async def _download_and_analyze(
     api_key: str,
     interval: int = 10,
     match_context: dict | None = None,
+    adaptive: bool = False,
 ) -> None:
     """Download YouTube video and analyze locally."""
     with Progress(
@@ -293,6 +300,7 @@ async def _download_and_analyze(
         interval=interval,
         match_context=match_context,
         original_url=url,
+        adaptive=adaptive,
     )
 
 
@@ -304,6 +312,7 @@ async def _analyze_local(
     interval: int = 10,
     match_context: dict | None = None,
     original_url: str | None = None,
+    adaptive: bool = False,
 ) -> None:
     """Analyze a local video file."""
     needed_tools = required_local_video_tools(mode)
@@ -354,7 +363,7 @@ async def _analyze_local(
         # Extract screenshots
         progress.update(task, description="スクリーンショットを抽出中...")
         screenshot_dir = PACKAGE_ROOT / "output" / "screenshots"
-        snapshots = extract_screenshots(video_path, screenshot_dir, interval_seconds=interval)
+        snapshots = extract_screenshots(video_path, screenshot_dir, interval_seconds=interval, adaptive=adaptive)
         console.print(f"[green]スクリーンショット:[/] {len(snapshots)}枚")
 
         # Determine mode (only auto-detect if not specified)

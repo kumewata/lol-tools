@@ -348,8 +348,24 @@ class RiotClient:
             else:
                 item["item_type_label"] = type_labels.get(raw_type, raw_type)
 
-        # gold_diff_timeline is simplified to 0 for now
-        gold_diff_timeline = [0] * len(gold_timeline)
+        # Compute per-frame team gold difference (my team - enemy team).
+        # Riot participant IDs 1-5 are team 1, 6-10 are team 2.
+        my_team_ids = (
+            {str(i) for i in range(1, 6)}
+            if participant_id <= 5
+            else {str(i) for i in range(6, 11)}
+        )
+        enemy_team_ids = (
+            {str(i) for i in range(6, 11)}
+            if participant_id <= 5
+            else {str(i) for i in range(1, 6)}
+        )
+        gold_diff_timeline: list[int] = []
+        for frame in frames:
+            pframes = frame.get("participantFrames", {})
+            my_gold = sum(pframes[pid]["totalGold"] for pid in my_team_ids if pid in pframes)
+            enemy_gold = sum(pframes[pid]["totalGold"] for pid in enemy_team_ids if pid in pframes)
+            gold_diff_timeline.append(my_gold - enemy_gold)
 
         return PlayerStats(
             match_id=match_id,

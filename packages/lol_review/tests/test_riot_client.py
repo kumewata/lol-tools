@@ -484,11 +484,13 @@ class TestParseTimeline:
             {"timestamp": 120, "jungle_cs": 16},
         ]
 
-    def test_parse_timeline_gold_diff_simplified(self):
+    def test_parse_timeline_gold_diff_computed_from_team_totals(self):
         client = make_client()
         data = self._make_timeline_data()
         result = client.parse_timeline(data, "KR_99999", "target-puuid", 1)
-        assert all(v == 0 for v in result.gold_diff_timeline)
+        # Test data has pid 1 and 2 (both team 1), no team 2 participants.
+        # So my_team gold = pid1 + pid2, enemy_gold = 0 for each frame.
+        assert result.gold_diff_timeline == [1000, 2700, 5500]
         assert len(result.gold_diff_timeline) == len(result.gold_timeline)
 
     def test_parse_timeline_item_purchases(self):

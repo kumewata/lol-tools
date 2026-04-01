@@ -238,6 +238,7 @@ def _run_vod_gameplay_for_replay(
     match_data_path: Path,
     interval: int,
     no_open: bool,
+    adaptive: bool = False,
 ) -> None:
     from lol_vod_analyzer.main import analyze as vod_analyze
 
@@ -247,6 +248,7 @@ def _run_vod_gameplay_for_replay(
         no_open=no_open,
         interval=interval,
         match_data=str(match_data_path),
+        adaptive=adaptive,
     )
 
 
@@ -337,6 +339,7 @@ def replay_analyze(
     review_count: int = typer.Option(5, "--review-count", min=1, help="直近何試合を候補として取得するか"),
     match_index: int = typer.Option(0, "--match-index", min=0, help="候補のうち何番目の試合を使うか。0 が最新"),
     interval: int = typer.Option(5, min=1, help="スクリーンショット間隔（秒）"),
+    adaptive: bool = typer.Option(False, "--adaptive", help="シーン変化量に基づく適応的スクリーンショット抽出"),
     no_open: bool = typer.Option(False, "--no-open", help="ブラウザを開かない"),
 ) -> None:
     """自分のリプレイ動画を試合データ付きで分析します。
@@ -363,6 +366,7 @@ def replay_analyze(
             match_data_path=temp_match_data_path,
             interval=interval,
             no_open=no_open,
+            adaptive=adaptive,
         )
     finally:
         temp_match_data_path.unlink(missing_ok=True)

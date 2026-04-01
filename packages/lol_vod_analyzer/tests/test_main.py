@@ -45,5 +45,6 @@ class TestBuildMatchContext:
             "opponent_level_ups": [],
             "position_timeline": [],
             "jungle_cs_timeline": [],
+            "gold_diff_timeline": [],
         }
         assert errors == []
