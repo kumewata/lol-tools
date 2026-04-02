@@ -224,6 +224,7 @@ def extract_screenshots(
     interval_seconds: int = 10,
     *,
     adaptive: bool = False,
+    speed: float = 1.0,
 ) -> list[SceneSnapshot]:
     """Extract screenshots from video using OpenCV.
 
@@ -231,6 +232,11 @@ def extract_screenshots(
     the video is scanned for scene-activity, then frames are sampled
     more densely during high-activity periods and less densely during
     low-activity periods.
+
+    *speed* is a playback speed multiplier (e.g. 2.0 for a replay
+    recorded at 2x speed).  All ``timestamp_ms`` values in the
+    returned snapshots are scaled by this factor so they correspond
+    to real game time rather than video time.
     """
     import cv2
 
@@ -271,10 +277,10 @@ def extract_screenshots(
             if not ret:
                 continue
 
-            timestamp_ms = int(ts * 1000)
-            frame_path = output_dir / f"screenshot_{i:04d}_{timestamp_ms // 1000}s.jpg"
+            game_time_ms = int(ts * 1000 * speed)
+            frame_path = output_dir / f"screenshot_{i:04d}_{game_time_ms // 1000}s.jpg"
             cv2.imwrite(str(frame_path), frame)
-            snapshots.append(SceneSnapshot(timestamp_ms=timestamp_ms, image_path=frame_path))
+            snapshots.append(SceneSnapshot(timestamp_ms=game_time_ms, image_path=frame_path))
 
         cap.release()
         return snapshots
@@ -291,12 +297,12 @@ def extract_screenshots(
         if not ret:
             break
 
-        timestamp_ms = int((target_frame / fps) * 1000)
-        frame_path = output_dir / f"screenshot_{frame_index:04d}_{timestamp_ms // 1000}s.jpg"
+        game_time_ms = int((target_frame / fps) * 1000 * speed)
+        frame_path = output_dir / f"screenshot_{frame_index:04d}_{game_time_ms // 1000}s.jpg"
         cv2.imwrite(str(frame_path), frame)
 
         snapshots.append(
-            SceneSnapshot(timestamp_ms=timestamp_ms, image_path=frame_path)
+            SceneSnapshot(timestamp_ms=game_time_ms, image_path=frame_path)
         )
         frame_index += 1
 

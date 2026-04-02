@@ -165,11 +165,12 @@ def test_replay_analyze_selects_requested_match(tmp_path: Path, monkeypatch) -> 
 
     captured: dict[str, object] = {}
 
-    def fake_run_vod(video_path: Path, match_data_path: Path, interval: int, no_open: bool, adaptive: bool = False) -> None:
+    def fake_run_vod(video_path: Path, match_data_path: Path, interval: int, no_open: bool, adaptive: bool = False, speed: float = 1.0) -> None:
         captured["video_path"] = video_path
         captured["interval"] = interval
         captured["no_open"] = no_open
         captured["adaptive"] = adaptive
+        captured["speed"] = speed
         captured["match_data"] = json.loads(match_data_path.read_text(encoding="utf-8"))
 
     monkeypatch.setattr(cli, "_run_vod_gameplay_for_replay", fake_run_vod)

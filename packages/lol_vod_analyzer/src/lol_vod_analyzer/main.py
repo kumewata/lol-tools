@@ -102,6 +102,7 @@ def analyze(
         None, "--match-data", help="Path to lol_review findings JSON for match context"
     ),
     adaptive: bool = typer.Option(False, "--adaptive", help="Use adaptive screenshot intervals based on scene activity"),
+    speed: float = typer.Option(1.0, "--speed", min=0.25, max=8.0, help="Replay playback speed multiplier (e.g. 2.0 for 2x speed replays)"),
 ) -> None:
     """Analyze a LoL video and generate an HTML report.
 
@@ -154,6 +155,7 @@ def analyze(
                     interval=interval,
                     match_context=match_context,
                     adaptive=adaptive,
+                    speed=speed,
                 )
             )
         else:
@@ -184,6 +186,7 @@ def analyze(
                 interval=interval,
                 match_context=match_context,
                 adaptive=adaptive,
+                speed=speed,
             )
         )
 
@@ -273,6 +276,7 @@ async def _download_and_analyze(
     interval: int = 10,
     match_context: dict | None = None,
     adaptive: bool = False,
+    speed: float = 1.0,
 ) -> None:
     """Download YouTube video and analyze locally."""
     with Progress(
@@ -301,6 +305,7 @@ async def _download_and_analyze(
         match_context=match_context,
         original_url=url,
         adaptive=adaptive,
+        speed=speed,
     )
 
 
@@ -313,6 +318,7 @@ async def _analyze_local(
     match_context: dict | None = None,
     original_url: str | None = None,
     adaptive: bool = False,
+    speed: float = 1.0,
 ) -> None:
     """Analyze a local video file."""
     needed_tools = required_local_video_tools(mode)
@@ -337,6 +343,10 @@ async def _analyze_local(
             video_source.source_type = "youtube"
         console.print(f"[green]Title:[/] {video_source.title}")
         console.print(f"[green]Duration:[/] {video_source.duration // 60}分{video_source.duration % 60}秒")
+        if speed != 1.0:
+            game_duration = int(video_source.duration * speed)
+            console.print(f"[green]Speed:[/] {speed}x（実試合時間: {game_duration // 60}分{game_duration % 60}秒）")
+            video_source.duration = game_duration
         progress.update(task, completed=True)
 
         # Extract audio and transcribe (skip for gameplay mode — game SE is noise)
@@ -363,7 +373,7 @@ async def _analyze_local(
         # Extract screenshots
         progress.update(task, description="スクリーンショットを抽出中...")
         screenshot_dir = PACKAGE_ROOT / "output" / "screenshots"
-        snapshots = extract_screenshots(video_path, screenshot_dir, interval_seconds=interval, adaptive=adaptive)
+        snapshots = extract_screenshots(video_path, screenshot_dir, interval_seconds=interval, adaptive=adaptive, speed=speed)
         console.print(f"[green]スクリーンショット:[/] {len(snapshots)}枚")
 
         # Determine mode (only auto-detect if not specified)
