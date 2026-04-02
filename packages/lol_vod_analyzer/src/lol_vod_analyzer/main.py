@@ -103,6 +103,7 @@ def analyze(
     ),
     adaptive: bool = typer.Option(False, "--adaptive", help="Use adaptive screenshot intervals based on scene activity"),
     speed: float = typer.Option(1.0, "--speed", min=0.25, max=8.0, help="Replay playback speed multiplier (e.g. 2.0 for 2x speed replays)"),
+    game_start: int = typer.Option(0, "--game-start", help="動画上の試合開始時刻（秒）。動画の先頭が試合開始でない場合に指定"),
 ) -> None:
     """Analyze a LoL video and generate an HTML report.
 
@@ -156,6 +157,7 @@ def analyze(
                     match_context=match_context,
                     adaptive=adaptive,
                     speed=speed,
+                    game_start_offset=game_start,
                 )
             )
         else:
@@ -167,6 +169,7 @@ def analyze(
                     lang=lang,
                     api_key=api_key,
                     match_context=match_context,
+                    game_start_offset=game_start,
                 )
             )
     else:
@@ -187,6 +190,7 @@ def analyze(
                 match_context=match_context,
                 adaptive=adaptive,
                 speed=speed,
+                game_start_offset=game_start,
             )
         )
 
@@ -198,6 +202,7 @@ async def _analyze_youtube(
     lang: str,
     api_key: str,
     match_context: dict | None = None,
+    game_start_offset: int = 0,
 ) -> None:
     with Progress(
         SpinnerColumn(),
@@ -250,6 +255,9 @@ async def _analyze_youtube(
         chunks = chunk_transcript(transcript)
         console.print(f"[green]チャンク数:[/] {len(chunks)}")
 
+        if game_start_offset:
+            console.print(f"[green]試合開始オフセット:[/] 動画の {game_start_offset // 60}分{game_start_offset % 60}秒地点")
+
         result = await analyze_video(
             source=video_source,
             transcript=transcript,
@@ -257,6 +265,7 @@ async def _analyze_youtube(
             mode=analysis_mode,
             api_key=api_key,
             match_context=match_context,
+            game_start_offset=game_start_offset,
         )
 
         progress.update(task, description="レポートを生成中...")
@@ -277,6 +286,7 @@ async def _download_and_analyze(
     match_context: dict | None = None,
     adaptive: bool = False,
     speed: float = 1.0,
+    game_start_offset: int = 0,
 ) -> None:
     """Download YouTube video and analyze locally."""
     with Progress(
@@ -306,6 +316,7 @@ async def _download_and_analyze(
         original_url=url,
         adaptive=adaptive,
         speed=speed,
+        game_start_offset=game_start_offset,
     )
 
 
@@ -319,6 +330,7 @@ async def _analyze_local(
     original_url: str | None = None,
     adaptive: bool = False,
     speed: float = 1.0,
+    game_start_offset: int = 0,
 ) -> None:
     """Analyze a local video file."""
     needed_tools = required_local_video_tools(mode)
@@ -381,6 +393,9 @@ async def _analyze_local(
             mode = "gameplay" if len(transcript) < 10 else "commentary"
         console.print(f"[green]分析モード:[/] {mode}")
 
+        if game_start_offset:
+            console.print(f"[green]試合開始オフセット:[/] 動画の {game_start_offset // 60}分{game_start_offset % 60}秒地点")
+
         # Run LLM analysis
         progress.update(task, description="LLMで分析中...")
         chunks = chunk_transcript(transcript)
@@ -393,6 +408,7 @@ async def _analyze_local(
             mode=mode,
             api_key=api_key,
             match_context=match_context,
+            game_start_offset=game_start_offset,
         )
 
         # Generate report

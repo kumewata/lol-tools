@@ -329,6 +329,7 @@ def build_gameplay_image_prompt(
     start_ms: int,
     end_ms: int,
     match_context: dict | None = None,
+    game_start_offset: int = 0,
 ) -> str:
     """Build a prompt for analyzing gameplay from screenshots only."""
     role_map = {
@@ -345,8 +346,10 @@ def build_gameplay_image_prompt(
         role = match_context.get('role', '不明')
         role_ja = role_map.get(role, role)
 
-        # Build timeline events for this chunk's time range
-        timeline_block = _build_chunk_timeline(match_context, start_ms // 1000, end_ms // 1000)
+        # Build timeline events for this chunk's time range (convert video time to game time)
+        game_start_sec = start_ms // 1000 - game_start_offset
+        game_end_sec = end_ms // 1000 - game_start_offset
+        timeline_block = _build_chunk_timeline(match_context, game_start_sec, game_end_sec)
 
         context_block = f"""
 ## 試合データ（Riot API から取得済み — この情報は正確です）
@@ -365,10 +368,14 @@ def build_gameplay_image_prompt(
 {champion} は {role_ja} であり、ジャングラーではありません。
 """
 
+    game_start_sec = start_ms // 1000 - game_start_offset
+    game_end_sec = end_ms // 1000 - game_start_offset
+    time_label = f"ゲーム内時間 {game_start_sec}秒 - {game_end_sec}秒" if game_start_offset else f"{start_ms // 1000}秒 - {end_ms // 1000}秒"
+
     return f"""あなたはLeague of Legendsの分析エキスパートです。
 この動画はLoLのゲームプレイ動画です。字幕・解説はありません。
 {context_block}
-これはチャンク {chunk_index + 1}/{total_chunks}（{start_ms // 1000}秒 - {end_ms // 1000}秒）のスクリーンショットです。
+これはチャンク {chunk_index + 1}/{total_chunks}（{time_label}）のスクリーンショットです。
 
 {champion if match_context else "プレイヤー"}の視点から、以下を分析してください:
 - {champion if match_context else "プレイヤー"}のポジショニングと動き
@@ -402,6 +409,7 @@ async def _analyze_snapshots_only(
     duration: int,
     chunk_duration_ms: int,
     match_context: dict | None = None,
+    game_start_offset: int = 0,
 ) -> list[ChunkAnalysis]:
     """Analyze video from snapshots only (no transcript)."""
     total_duration_ms = duration * 1000
@@ -418,7 +426,7 @@ async def _analyze_snapshots_only(
         if not chunk_snapshots:
             continue
 
-        prompt = build_gameplay_image_prompt(i, num_chunks, start_ms, end_ms, match_context)
+        prompt = build_gameplay_image_prompt(i, num_chunks, start_ms, end_ms, match_context, game_start_offset)
         contents: list = [prompt]
 
         # Use up to 6 images per chunk for gameplay (more visual context needed)
@@ -447,6 +455,7 @@ async def analyze_video(
     mode: Literal["commentary", "gameplay"],
     api_key: str | None = None,
     match_context: dict | None = None,
+    game_start_offset: int = 0,
 ) -> AnalysisResult:
     if api_key is None:
         api_key = os.environ.get("GOOGLE_API_KEY", "")
@@ -460,7 +469,7 @@ async def analyze_video(
     if not transcript_chunks:
         if mode == "gameplay" and snapshots:
             chunk_analyses = await _analyze_snapshots_only(
-                client, snapshots, source.duration, chunk_duration_ms, match_context
+                client, snapshots, source.duration, chunk_duration_ms, match_context, game_start_offset
             )
         else:
             return AnalysisResult(
