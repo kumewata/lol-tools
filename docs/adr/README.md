@@ -22,3 +22,5 @@ tags: [ADR, アーキテクチャ, インデックス]
 | [ADR-009](ADR-009-first-run-onboarding.md) | 初回ユーザー導線の統一 | 全体 | Accepted |
 | [ADR-010](ADR-010-jungle-event-position-context.md) | ジャングルイベントと位置情報の match-data 拡張 | 全体 | Accepted |
 | [ADR-011](ADR-011-single-match-data-for-vod-analysis.md) | 動画分析の match-data を単一試合 JSON に限定する | 全体 | Accepted |
+| [ADR-012](ADR-012-adaptive-interval-and-momentum-compression.md) | 適応的スクリーンショット間隔とモメンタム圧縮 | lol_vod_analyzer | Accepted |
+| [ADR-013](ADR-013-game-start-offset.md) | 動画上の試合開始オフセットによるタイムライン同期 | lol_vod_analyzer | Accepted |
