@@ -160,7 +160,7 @@ uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --download --mode
 `プレイ動画分析` に `試合データ分析` の結果を足して、試合内イベントの文脈を付ける使い方。
 自分の試合録画を対象にした、もっとも精度の高いプレイ分析フロー。
 
-録画方法が分からない場合は [自分のリプレイ動画を用意する手順](docs/replay-recording-guide.md) を参照。
+録画方法が分からない場合は [自分のリプレイ動画を用意する手順](docs/replay-recording-guide.md) を参照。Windows で録画したい場合は [Windows 向けリプレイ録画ガイド](docs/replay-recording-guide-windows.md) も使える。
 
 ```bash
 # 標準フロー: replay analyze が試合データ取得と動画分析をつなぐ
@@ -204,7 +204,7 @@ start "" "C:\Users\<you>\Desktop\lol-tools\packages\lol_vod_analyzer\output\vod_
 
 このワークフローは、自分の試合を Riot API の試合データと紐付けて分析できる前提のため、プレイ動画分析の中では標準機能として扱う。
 
-詳細な録画手順は [docs/replay-recording-guide.md](docs/replay-recording-guide.md) を参照。
+詳細な録画手順は [docs/replay-recording-guide.md](docs/replay-recording-guide.md) を参照。Windows だけを見たい場合は [docs/replay-recording-guide-windows.md](docs/replay-recording-guide-windows.md) を参照。
 
 ```bash
 # 1. 試合データを取得
