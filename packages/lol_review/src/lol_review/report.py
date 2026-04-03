@@ -17,7 +17,12 @@ from lol_review.models import AnalysisResult
 _PACKAGE_ROOT = Path(__file__).parent.parent.parent
 # Installed wheel: templates are included alongside the package
 _INSTALLED_TEMPLATE_DIR = Path(__file__).parent / "templates"
-TEMPLATE_DIR = _INSTALLED_TEMPLATE_DIR if _INSTALLED_TEMPLATE_DIR.is_dir() else _PACKAGE_ROOT / "templates"
+_INSTALLED_REPORT_TEMPLATE = _INSTALLED_TEMPLATE_DIR / "report.html"
+TEMPLATE_DIR = (
+    _INSTALLED_TEMPLATE_DIR
+    if _INSTALLED_REPORT_TEMPLATE.is_file()
+    else _PACKAGE_ROOT / "templates"
+)
 OUTPUT_DIR = _PACKAGE_ROOT / "output"
 
 
