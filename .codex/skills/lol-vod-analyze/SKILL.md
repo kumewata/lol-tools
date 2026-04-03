@@ -14,6 +14,9 @@ LoL の解説動画・コーチング動画・プレイ動画を AI で分析し
 - YouTube 動画は字幕（自動生成含む）とストーリーボード画像、またはダウンロードした動画から分析する
 - ローカル動画ファイルも入力できる
 - `--match-data` を使うと `lol-review` の試合データと結合できる
+- `--adaptive` で動きの多い場面のスクリーンショット密度を自動調整できる
+- `--speed` でリプレイの再生速度を指定し、タイムスタンプを正規化できる（例: 2倍速なら `--speed 2.0`）
+- `--game-start` で動画上の試合開始時刻（秒）を指定し、match-data のタイムスタンプとのずれを補正できる
 
 ## 手順
 
@@ -43,6 +46,10 @@ LoL の解説動画・コーチング動画・プレイ動画を AI で分析し
    試合データを結合する場合:
    ```bash
    uv run lol-tools vod analyze /path/to/video.mp4 --mode gameplay --match-data packages/lol_review/output/latest_findings.json --no-open
+   ```
+   倍速リプレイ + 試合開始オフセット付きの場合:
+   ```bash
+   uv run lol-tools vod analyze /path/to/replay.mov --mode gameplay --match-data match.json --speed 2.0 --game-start 90 --no-open
    ```
 5. 生成されたHTMLレポートのパスを読み取り、内容を要約する
 
@@ -85,6 +92,16 @@ HTMLの中に以下のセクションがある:
 
 - 動画「レベル3でガンクを狙う」→ 自分のデータで序盤のキル/デスタイミングを確認
 - 動画「CSを意識」→ 自分の CS/min と比較
+
+## オプション判断ガイド
+
+| 状況 | 追加オプション |
+|------|---------------|
+| リプレイを2倍速で録画した | `--speed 2.0` |
+| 動画の先頭がロード画面や待機時間で試合開始と一致しない | `--game-start <秒>` |
+| 重要なシーンのスクリーンショットが足りない/多すぎる | `--adaptive` |
+| YouTube 動画の字幕がなく画像分析したい | `--download --mode gameplay` |
+| `--speed` と `--game-start` は併用可能。`--speed` は動画全体のタイムスケール補正、`--game-start` は開始位置のオフセット補正 | |
 
 ## トラブルシューティング
 
