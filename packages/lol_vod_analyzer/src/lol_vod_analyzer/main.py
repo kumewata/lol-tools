@@ -28,6 +28,7 @@ from lol_vod_analyzer.local_video import (
     extract_audio,
     extract_screenshots,
     get_video_metadata,
+    plan_screenshot_sampling,
     transcribe_audio,
 )
 from lol_vod_analyzer.models import SceneSnapshot, VideoSource
@@ -141,8 +142,18 @@ def analyze(
         None, "--match-data", help="Path to lol_review findings JSON for match context"
     ),
     adaptive: bool = typer.Option(False, "--adaptive", help="Use adaptive screenshot intervals based on scene activity"),
+    sampling_strategy: str | None = typer.Option(
+        None,
+        "--sampling-strategy",
+        help="Screenshot sampling strategy: fixed, adaptive, or focused",
+    ),
     max_screenshots: int = typer.Option(24, "--max-screenshots", min=1, help="Maximum number of screenshots used for analysis"),
     keep_screenshots: bool = typer.Option(False, "--keep-screenshots", help="Keep extracted screenshots on disk after report generation"),
+    dry_run_sampling: bool = typer.Option(False, "--dry-run-sampling", help="Only compute screenshot allocation and exit"),
+    dump_sampling_report: Path | None = typer.Option(None, "--dump-sampling-report", dir_okay=False, help="Write sampling report JSON to this path"),
+    focus_window_seconds: int = typer.Option(45, "--focus-window-seconds", min=1, help="Half-window size in seconds for focused sampling"),
+    focus_budget_ratio: float = typer.Option(0.75, "--focus-budget-ratio", min=0.0, max=1.0, help="Fraction of screenshot budget reserved for focus windows"),
+    global_backfill: int = typer.Option(4, "--global-backfill", min=0, help="Number of screenshots reserved for whole-game backfill in focused sampling"),
     speed: float = typer.Option(1.0, "--speed", min=0.25, max=8.0, help="Replay playback speed multiplier (e.g. 2.0 for 2x speed replays)"),
     game_start: int = typer.Option(0, "--game-start", help="動画上の試合開始時刻（秒）。動画の先頭が試合開始でない場合に指定"),
 ) -> None:
@@ -175,7 +186,7 @@ def analyze(
             console.print(f"[green]試合データ読み込み:[/] {match_context.get('champion')} ({match_context.get('role')})")
 
     api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
+    if not api_key and not dry_run_sampling:
         console.print(
             "[red]Error:[/] GOOGLE_API_KEY が設定されていません。\n"
             "通常は `.env` に設定してください。\n"
@@ -197,8 +208,14 @@ def analyze(
                     interval=interval,
                     match_context=match_context,
                     adaptive=adaptive,
+                    sampling_strategy=sampling_strategy,
                     max_screenshots=max_screenshots,
                     keep_screenshots=keep_screenshots,
+                    dry_run_sampling=dry_run_sampling,
+                    dump_sampling_report=dump_sampling_report,
+                    focus_window_seconds=focus_window_seconds,
+                    focus_budget_ratio=focus_budget_ratio,
+                    global_backfill=global_backfill,
                     speed=speed,
                     game_start_offset=game_start,
                 )
@@ -232,8 +249,14 @@ def analyze(
                 interval=interval,
                 match_context=match_context,
                 adaptive=adaptive,
+                sampling_strategy=sampling_strategy,
                 max_screenshots=max_screenshots,
                 keep_screenshots=keep_screenshots,
+                dry_run_sampling=dry_run_sampling,
+                dump_sampling_report=dump_sampling_report,
+                focus_window_seconds=focus_window_seconds,
+                focus_budget_ratio=focus_budget_ratio,
+                global_backfill=global_backfill,
                 speed=speed,
                 game_start_offset=game_start,
             )
@@ -330,8 +353,14 @@ async def _download_and_analyze(
     interval: int = 10,
     match_context: dict | None = None,
     adaptive: bool = False,
+    sampling_strategy: str | None = None,
     max_screenshots: int = 24,
     keep_screenshots: bool = False,
+    dry_run_sampling: bool = False,
+    dump_sampling_report: Path | None = None,
+    focus_window_seconds: int = 45,
+    focus_budget_ratio: float = 0.75,
+    global_backfill: int = 4,
     speed: float = 1.0,
     game_start_offset: int = 0,
 ) -> None:
@@ -362,8 +391,14 @@ async def _download_and_analyze(
         match_context=match_context,
         original_url=url,
         adaptive=adaptive,
+        sampling_strategy=sampling_strategy,
         max_screenshots=max_screenshots,
         keep_screenshots=keep_screenshots,
+        dry_run_sampling=dry_run_sampling,
+        dump_sampling_report=dump_sampling_report,
+        focus_window_seconds=focus_window_seconds,
+        focus_budget_ratio=focus_budget_ratio,
+        global_backfill=global_backfill,
         speed=speed,
         game_start_offset=game_start_offset,
     )
@@ -378,8 +413,14 @@ async def _analyze_local(
     match_context: dict | None = None,
     original_url: str | None = None,
     adaptive: bool = False,
+    sampling_strategy: str | None = None,
     max_screenshots: int = 24,
     keep_screenshots: bool = False,
+    dry_run_sampling: bool = False,
+    dump_sampling_report: Path | None = None,
+    focus_window_seconds: int = 45,
+    focus_budget_ratio: float = 0.75,
+    global_backfill: int = 4,
     speed: float = 1.0,
     game_start_offset: int = 0,
 ) -> None:
@@ -419,6 +460,35 @@ async def _analyze_local(
                 video_source.duration = game_duration
             progress.update(task, completed=True)
 
+            progress.update(task, description="スクリーンショット計画を構築中...")
+            sampling_report = plan_screenshot_sampling(
+                video_path,
+                interval_seconds=interval,
+                adaptive=adaptive,
+                max_screenshots=max_screenshots,
+                match_context=match_context,
+                game_start_offset=game_start_offset,
+                sampling_strategy=sampling_strategy,
+                focus_window_seconds=focus_window_seconds,
+                focus_budget_ratio=focus_budget_ratio,
+                global_backfill=global_backfill,
+            )
+            console.print(
+                f"[green]Sampling Strategy:[/] {sampling_report.get('strategy')} "
+                f"({len(sampling_report.get('final_timestamps_sec', []))} timestamps)"
+            )
+            if dump_sampling_report is not None:
+                dump_sampling_report.parent.mkdir(parents=True, exist_ok=True)
+                dump_sampling_report.write_text(
+                    json.dumps(sampling_report, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                console.print(f"[green]Sampling Report:[/] {dump_sampling_report}")
+            if dry_run_sampling:
+                progress.update(task, completed=True)
+                console.print("[green]dry-run-sampling:[/] スクリーンショット抽出と LLM 分析を省略しました")
+                return
+
             transcript: list = []
             if mode != "gameplay":
                 progress.update(task, description="音声を抽出中...")
@@ -449,6 +519,11 @@ async def _analyze_local(
                 max_screenshots=max_screenshots,
                 match_context=match_context,
                 game_start_offset=game_start_offset,
+                sampling_strategy=sampling_report.get("strategy"),
+                focus_window_seconds=focus_window_seconds,
+                focus_budget_ratio=focus_budget_ratio,
+                global_backfill=global_backfill,
+                planned_timestamps=sampling_report.get("final_timestamps_sec", []),
             )
             console.print(f"[green]スクリーンショット:[/] {len(snapshots)}枚")
 

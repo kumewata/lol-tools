@@ -7,6 +7,8 @@ import pytest
 
 from lol_vod_analyzer.local_video import (
     _adaptive_timestamps,
+    _build_focus_windows,
+    _build_focused_sampling_report,
     _build_sampling_timestamps,
     _compute_scene_activity,
     get_video_metadata,
@@ -143,3 +145,84 @@ class TestBuildSamplingTimestamps:
         )
 
         assert any(270 <= ts <= 450 for ts in timestamps)
+
+    def test_focused_sampling_uses_focus_windows_and_backfill(self):
+        timestamps = _build_sampling_timestamps(
+            duration_sec=1800,
+            interval_seconds=10,
+            max_screenshots=12,
+            adaptive=False,
+            sampling_strategy="focused",
+            match_context={
+                "death_timestamps": [400],
+                "objective_events": [{"timestamp": 900, "type": "ELITE_MONSTER_KILL"}],
+                "level_ups": [{"timestamp": 600, "level": 6}],
+                "gold_diff_timeline": [0] * 4 + [2000] * 3 + [0] * 20,
+            },
+            global_backfill=2,
+        )
+
+        assert len(timestamps) <= 12
+        assert any(345 <= ts <= 445 for ts in timestamps)
+        assert any(845 <= ts <= 945 for ts in timestamps)
+        assert timestamps == sorted(timestamps)
+
+
+class TestFocusedSampling:
+    def test_build_focus_windows_includes_key_reasons(self):
+        windows = _build_focus_windows(
+            duration_sec=1800,
+            match_context={
+                "death_timestamps": [400],
+                "kill_timestamps": [450],
+                "assist_timestamps": [470],
+                "objective_events": [{"timestamp": 900, "type": "ELITE_MONSTER_KILL"}],
+                "level_ups": [{"timestamp": 600, "level": 6}],
+                "gold_diff_timeline": [0] * 4 + [2000] * 3 + [0] * 20,
+            },
+            game_start_offset=0,
+            focus_window_seconds=45,
+        )
+
+        reasons = {reason for window in windows for reason in window["reasons"]}
+        assert "death" in reasons
+        assert "objective" in reasons
+        assert "momentum" in reasons
+        assert "level_6" in reasons
+
+    def test_build_focused_sampling_report_respects_budget(self):
+        windows = [
+            {
+                "id": "death_400",
+                "reason": "death",
+                "reasons": ["death"],
+                "priority": 100,
+                "start_sec": 355.0,
+                "end_sec": 445.0,
+                "source_events": [{"type": "death", "timestamp_sec": 400}],
+            },
+            {
+                "id": "objective_900",
+                "reason": "objective",
+                "reasons": ["objective"],
+                "priority": 90,
+                "start_sec": 855.0,
+                "end_sec": 945.0,
+                "source_events": [{"type": "ELITE_MONSTER_KILL", "timestamp_sec": 900}],
+            },
+        ]
+        report = _build_focused_sampling_report(
+            duration_sec=1800,
+            max_screenshots=8,
+            windows=windows,
+            focus_budget_ratio=0.75,
+            global_backfill=2,
+            game_start_offset=0,
+        )
+
+        assert report["strategy"] == "focused"
+        assert len(report["focus_windows"]) == 2
+        assert len(report["final_timestamps_sec"]) == 8
+        assert report["backfill_budget"] >= 2
+        assert report["backfill"]["allocated_count"] >= 2
+        assert all(window["allocated_count"] >= 2 for window in report["focus_windows"])

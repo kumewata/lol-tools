@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import subprocess
 from pathlib import Path
@@ -21,6 +22,9 @@ DEFAULT_MAX_SCREENSHOTS = 24
 DEFAULT_EARLY_GAME_WINDOW_SECONDS = 180
 DEFAULT_EARLY_GAME_RESERVED = 6
 DEFAULT_MOMENTUM_RESERVED = 12
+DEFAULT_FOCUS_WINDOW_SECONDS = 45
+DEFAULT_FOCUS_BUDGET_RATIO = 0.75
+DEFAULT_GLOBAL_BACKFILL = 4
 
 
 def get_video_metadata(video_path: Path) -> VideoSource:
@@ -333,9 +337,413 @@ def _build_sampling_timestamps(
     early_game_window_seconds: int = DEFAULT_EARLY_GAME_WINDOW_SECONDS,
     early_game_reserved: int = DEFAULT_EARLY_GAME_RESERVED,
     momentum_reserved: int = DEFAULT_MOMENTUM_RESERVED,
+    sampling_strategy: str = "fixed",
+    focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
+    focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
+    global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
 ) -> list[float]:
-    if duration_sec <= 0 or max_screenshots <= 0:
+    return _build_sampling_plan(
+        duration_sec=duration_sec,
+        interval_seconds=interval_seconds,
+        max_screenshots=max_screenshots,
+        adaptive=adaptive,
+        activity_profile=activity_profile,
+        match_context=match_context,
+        game_start_offset=game_start_offset,
+        early_game_window_seconds=early_game_window_seconds,
+        early_game_reserved=early_game_reserved,
+        momentum_reserved=momentum_reserved,
+        sampling_strategy=sampling_strategy,
+        focus_window_seconds=focus_window_seconds,
+        focus_budget_ratio=focus_budget_ratio,
+        global_backfill=global_backfill,
+    )["final_timestamps_sec"]
+
+
+def _resolve_sampling_strategy(
+    sampling_strategy: str | None,
+    adaptive: bool,
+) -> str:
+    if sampling_strategy:
+        return sampling_strategy
+    return "adaptive" if adaptive else "fixed"
+
+
+def _make_focus_window(
+    *,
+    window_id: str,
+    reason: str,
+    priority: int,
+    start_sec: float,
+    end_sec: float,
+    source_events: list[dict],
+) -> dict:
+    return {
+        "id": window_id,
+        "reason": reason,
+        "reasons": [reason],
+        "priority": priority,
+        "start_sec": start_sec,
+        "end_sec": end_sec,
+        "source_events": source_events,
+    }
+
+
+def _merge_focus_windows(windows: list[dict]) -> list[dict]:
+    if not windows:
         return []
+
+    sorted_windows = sorted(
+        windows,
+        key=lambda w: (w["start_sec"], w["end_sec"], -w["priority"]),
+    )
+    merged: list[dict] = []
+
+    for window in sorted_windows:
+        if (
+            not merged
+            or window["start_sec"] > merged[-1]["end_sec"]
+            or window["reason"] != merged[-1]["reason"]
+        ):
+            merged.append({
+                "id": window["id"],
+                "reason": window["reason"],
+                "reasons": list(window["reasons"]),
+                "priority": window["priority"],
+                "start_sec": window["start_sec"],
+                "end_sec": window["end_sec"],
+                "source_events": list(window["source_events"]),
+            })
+            continue
+
+        current = merged[-1]
+        current["end_sec"] = max(current["end_sec"], window["end_sec"])
+        current["priority"] = max(current["priority"], window["priority"])
+        for reason in window["reasons"]:
+            if reason not in current["reasons"]:
+                current["reasons"].append(reason)
+        current["reason"] = "+".join(current["reasons"])
+        current["source_events"].extend(window["source_events"])
+
+    return merged
+
+
+def _build_focus_windows(
+    *,
+    duration_sec: float,
+    match_context: dict | None,
+    game_start_offset: int,
+    focus_window_seconds: int,
+) -> list[dict]:
+    if duration_sec <= 0 or focus_window_seconds <= 0 or not match_context:
+        return []
+
+    def bounded_window(
+        ts: int,
+        *,
+        reason: str,
+        priority: int,
+        event_payload: dict,
+    ) -> dict | None:
+        video_ts = game_start_offset + ts
+        if video_ts < 0 or video_ts > duration_sec:
+            return None
+        start_sec = max(0.0, float(video_ts - focus_window_seconds))
+        end_sec = min(duration_sec, float(video_ts + focus_window_seconds))
+        if end_sec <= start_sec:
+            return None
+        return _make_focus_window(
+            window_id=f"{reason}_{ts}",
+            reason=reason,
+            priority=priority,
+            start_sec=start_sec,
+            end_sec=end_sec,
+            source_events=[event_payload],
+        )
+
+    windows: list[dict] = []
+
+    for ts in match_context.get("death_timestamps", []):
+        if isinstance(ts, int):
+            window = bounded_window(ts, reason="death", priority=100, event_payload={"type": "death", "timestamp_sec": ts})
+            if window:
+                windows.append(window)
+
+    for ts in match_context.get("kill_timestamps", []):
+        if isinstance(ts, int):
+            window = bounded_window(ts, reason="kill", priority=75, event_payload={"type": "kill", "timestamp_sec": ts})
+            if window:
+                windows.append(window)
+
+    for ts in match_context.get("assist_timestamps", []):
+        if isinstance(ts, int):
+            window = bounded_window(ts, reason="assist", priority=65, event_payload={"type": "assist", "timestamp_sec": ts})
+            if window:
+                windows.append(window)
+
+    for event in match_context.get("objective_events", []):
+        ts = event.get("timestamp")
+        if isinstance(ts, int):
+            event_type = event.get("type", "objective")
+            priority = 90 if event_type == "ELITE_MONSTER_KILL" else 85
+            window = bounded_window(
+                ts,
+                reason="objective",
+                priority=priority,
+                event_payload={"type": event_type, "timestamp_sec": ts},
+            )
+            if window:
+                windows.append(window)
+
+    for level_info in match_context.get("level_ups", []):
+        ts = level_info.get("timestamp")
+        level = level_info.get("level")
+        if isinstance(ts, int) and level in {6, 11, 16}:
+            window = bounded_window(
+                ts,
+                reason=f"level_{level}",
+                priority=60,
+                event_payload={"type": "level_up", "timestamp_sec": ts, "level": level},
+            )
+            if window:
+                windows.append(window)
+
+    for index, (start_sec, end_sec) in enumerate(important_time_windows(match_context)):
+        video_start = max(0.0, float(game_start_offset + start_sec))
+        video_end = min(duration_sec, float(game_start_offset + end_sec))
+        if video_end <= video_start:
+            continue
+        windows.append(
+            _make_focus_window(
+                window_id=f"momentum_{index}",
+                reason="momentum",
+                priority=80,
+                start_sec=video_start,
+                end_sec=video_end,
+                source_events=[{"type": "momentum", "start_sec": start_sec, "end_sec": end_sec}],
+            )
+        )
+
+    return _merge_focus_windows(windows)
+
+
+def _allocate_focus_counts(
+    windows: list[dict],
+    *,
+    focus_budget: int,
+) -> tuple[list[dict], int]:
+    if focus_budget <= 0 or not windows:
+        return [], focus_budget
+
+    minimum_per_window = 2 if focus_budget >= 2 else 1
+    max_windows = max(1, focus_budget // minimum_per_window)
+    selected = sorted(
+        windows,
+        key=lambda w: (-w["priority"], w["start_sec"], w["end_sec"]),
+    )[:max_windows]
+
+    if not selected:
+        return [], focus_budget
+
+    for window in selected:
+        window["allocated_count"] = minimum_per_window
+        window["selected_timestamps_sec"] = []
+
+    remaining = focus_budget - (minimum_per_window * len(selected))
+    if remaining <= 0:
+        return selected, 0
+
+    weights = [
+        max(1.0, window["priority"] * math.sqrt(max(1.0, window["end_sec"] - window["start_sec"])))
+        for window in selected
+    ]
+    total_weight = sum(weights)
+    extra_counts = [0] * len(selected)
+    fractions: list[tuple[float, int]] = []
+
+    for index, weight in enumerate(weights):
+        share = (weight / total_weight) * remaining if total_weight else 0.0
+        whole = int(math.floor(share))
+        extra_counts[index] = whole
+        fractions.append((share - whole, index))
+
+    allocated = sum(extra_counts)
+    for _, index in sorted(fractions, key=lambda item: (-item[0], item[1])):
+        if allocated >= remaining:
+            break
+        extra_counts[index] += 1
+        allocated += 1
+
+    for window, extra in zip(selected, extra_counts):
+        window["allocated_count"] += extra
+
+    return selected, max(0, remaining - allocated)
+
+
+def _build_focused_sampling_report(
+    *,
+    duration_sec: float,
+    max_screenshots: int,
+    windows: list[dict],
+    focus_budget_ratio: float,
+    global_backfill: int,
+    game_start_offset: int,
+) -> dict:
+    if duration_sec <= 0 or max_screenshots <= 0:
+        return {
+            "strategy": "focused",
+            "video_duration_sec": duration_sec,
+            "max_screenshots": max_screenshots,
+            "focus_budget": 0,
+            "backfill_budget": 0,
+            "focus_windows": [],
+            "backfill": {"allocated_count": 0, "selected_timestamps_sec": []},
+            "final_timestamps_sec": [],
+        }
+
+    if not windows:
+        backfill_timestamps = _evenly_spaced_timestamps(
+            max(0.0, float(game_start_offset)),
+            duration_sec,
+            max_screenshots,
+        )
+        return {
+            "strategy": "focused",
+            "video_duration_sec": duration_sec,
+            "max_screenshots": max_screenshots,
+            "focus_budget": 0,
+            "backfill_budget": max_screenshots,
+            "focus_windows": [],
+            "backfill": {
+                "allocated_count": len(backfill_timestamps),
+                "selected_timestamps_sec": backfill_timestamps,
+            },
+            "final_timestamps_sec": sorted(backfill_timestamps),
+        }
+
+    reserved_backfill = min(max_screenshots, max(0, global_backfill))
+    requested_focus_budget = int(round(max_screenshots * max(0.0, min(1.0, focus_budget_ratio))))
+    focus_budget = min(max(0, max_screenshots - reserved_backfill), requested_focus_budget)
+    backfill_budget = max(0, max_screenshots - focus_budget)
+
+    allocated_windows, _ = _allocate_focus_counts(windows, focus_budget=focus_budget)
+    focus_timestamps: list[float] = []
+    focus_window_reports: list[dict] = []
+
+    for window in sorted(allocated_windows, key=lambda item: item["start_sec"]):
+        selected_timestamps = _evenly_spaced_timestamps(
+            window["start_sec"],
+            window["end_sec"],
+            window["allocated_count"],
+        )
+        window["selected_timestamps_sec"] = selected_timestamps
+        focus_timestamps.extend(selected_timestamps)
+        focus_window_reports.append({
+            "id": window["id"],
+            "reason": window["reason"],
+            "reasons": window["reasons"],
+            "priority": window["priority"],
+            "start_sec": window["start_sec"],
+            "end_sec": window["end_sec"],
+            "duration_sec": window["end_sec"] - window["start_sec"],
+            "allocated_count": window["allocated_count"],
+            "selected_timestamps_sec": selected_timestamps,
+            "source_events": window["source_events"],
+        })
+
+    backfill_timestamps: list[float] = []
+    start_sec = max(0.0, float(game_start_offset))
+    if backfill_budget > 0 and duration_sec > start_sec:
+        span = duration_sec - start_sec
+        step = span / backfill_budget
+        backfill_timestamps = [
+            start_sec + (step * i) + (step / 2)
+            for i in range(backfill_budget)
+            if start_sec + (step * i) + (step / 2) < duration_sec
+        ]
+    final_timestamps = _merge_unique_timestamps(
+        focus_timestamps,
+        backfill_timestamps,
+        limit=max_screenshots,
+    )
+    if len(final_timestamps) < max_screenshots and duration_sec > start_sec:
+        seen_keys = {int(round(ts * 1000)) for ts in final_timestamps}
+        candidate_count = max(max_screenshots * 4, 8)
+        span = duration_sec - start_sec
+        step = span / candidate_count
+        refill_candidates: list[float] = []
+        for i in range(candidate_count):
+            ts = start_sec + (step * i) + (step / 2)
+            key = int(round(ts * 1000))
+            if ts >= duration_sec or key in seen_keys:
+                continue
+            refill_candidates.append(ts)
+            seen_keys.add(key)
+            if len(final_timestamps) + len(refill_candidates) >= max_screenshots:
+                break
+        if refill_candidates:
+            backfill_timestamps.extend(refill_candidates)
+            final_timestamps = _merge_unique_timestamps(
+                focus_timestamps,
+                backfill_timestamps,
+                limit=max_screenshots,
+            )
+
+    return {
+        "strategy": "focused",
+        "video_duration_sec": duration_sec,
+        "max_screenshots": max_screenshots,
+        "focus_budget": focus_budget,
+        "backfill_budget": backfill_budget,
+        "focus_windows": focus_window_reports,
+        "backfill": {
+            "allocated_count": len(backfill_timestamps),
+            "selected_timestamps_sec": backfill_timestamps,
+        },
+        "final_timestamps_sec": final_timestamps,
+    }
+
+
+def _build_sampling_plan(
+    *,
+    duration_sec: float,
+    interval_seconds: int,
+    max_screenshots: int,
+    adaptive: bool,
+    activity_profile: list[tuple[float, float]] | None = None,
+    match_context: dict | None = None,
+    game_start_offset: int = 0,
+    early_game_window_seconds: int = DEFAULT_EARLY_GAME_WINDOW_SECONDS,
+    early_game_reserved: int = DEFAULT_EARLY_GAME_RESERVED,
+    momentum_reserved: int = DEFAULT_MOMENTUM_RESERVED,
+    sampling_strategy: str = "fixed",
+    focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
+    focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
+    global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
+) -> dict:
+    if duration_sec <= 0 or max_screenshots <= 0:
+        return {
+            "strategy": sampling_strategy,
+            "video_duration_sec": duration_sec,
+            "max_screenshots": max_screenshots,
+            "final_timestamps_sec": [],
+        }
+
+    if sampling_strategy == "focused":
+        windows = _build_focus_windows(
+            duration_sec=duration_sec,
+            match_context=match_context,
+            game_start_offset=game_start_offset,
+            focus_window_seconds=focus_window_seconds,
+        )
+        return _build_focused_sampling_report(
+            duration_sec=duration_sec,
+            max_screenshots=max_screenshots,
+            windows=windows,
+            focus_budget_ratio=focus_budget_ratio,
+            global_backfill=global_backfill,
+            game_start_offset=game_start_offset,
+        )
 
     has_gameplay_context = match_context is not None or game_start_offset > 0
     early_budget = min(max_screenshots, early_game_reserved) if has_gameplay_context else 0
@@ -381,11 +789,80 @@ def _build_sampling_timestamps(
             start_sec=max(0, game_start_offset),
         )
 
-    return _merge_unique_timestamps(
+    final_timestamps = _merge_unique_timestamps(
         early_candidates,
         momentum_candidates,
         backfill_candidates,
         limit=max_screenshots,
+    )
+    return {
+        "strategy": sampling_strategy,
+        "video_duration_sec": duration_sec,
+        "max_screenshots": max_screenshots,
+        "early_candidates_sec": early_candidates,
+        "momentum_candidates_sec": momentum_candidates,
+        "backfill_candidates_sec": backfill_candidates,
+        "final_timestamps_sec": final_timestamps,
+    }
+
+
+def plan_screenshot_sampling(
+    video_path: Path,
+    interval_seconds: int = 10,
+    *,
+    adaptive: bool = False,
+    max_screenshots: int = DEFAULT_MAX_SCREENSHOTS,
+    match_context: dict | None = None,
+    game_start_offset: int = 0,
+    sampling_strategy: str | None = None,
+    focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
+    focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
+    global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
+) -> dict:
+    import cv2
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return {
+            "strategy": _resolve_sampling_strategy(sampling_strategy, adaptive),
+            "video_duration_sec": 0,
+            "max_screenshots": max_screenshots,
+            "final_timestamps_sec": [],
+        }
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        cap.release()
+        return {
+            "strategy": _resolve_sampling_strategy(sampling_strategy, adaptive),
+            "video_duration_sec": 0,
+            "max_screenshots": max_screenshots,
+            "final_timestamps_sec": [],
+        }
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration_sec = total_frames / fps
+    strategy = _resolve_sampling_strategy(sampling_strategy, adaptive)
+
+    activity_profile: list[tuple[float, float]] = []
+    if strategy == "adaptive" and duration_sec > 0:
+        cap.release()
+        activity_profile = _compute_scene_activity(video_path)
+    else:
+        cap.release()
+
+    return _build_sampling_plan(
+        duration_sec=duration_sec,
+        interval_seconds=interval_seconds,
+        max_screenshots=max_screenshots,
+        adaptive=(strategy == "adaptive"),
+        activity_profile=activity_profile,
+        match_context=match_context,
+        game_start_offset=game_start_offset,
+        sampling_strategy=strategy,
+        focus_window_seconds=focus_window_seconds,
+        focus_budget_ratio=focus_budget_ratio,
+        global_backfill=global_backfill,
     )
 
 
@@ -399,6 +876,11 @@ def extract_screenshots(
     max_screenshots: int = DEFAULT_MAX_SCREENSHOTS,
     match_context: dict | None = None,
     game_start_offset: int = 0,
+    sampling_strategy: str | None = None,
+    focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
+    focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
+    global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
+    planned_timestamps: list[float] | None = None,
 ) -> list[SceneSnapshot]:
     """Extract screenshots from video using OpenCV.
 
@@ -428,23 +910,31 @@ def extract_screenshots(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     duration_sec = total_frames / fps
 
-    activity_profile: list[tuple[float, float]] = []
-    if adaptive and duration_sec > 0:
-        cap.release()
-        activity_profile = _compute_scene_activity(video_path)
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            return []
+    strategy = _resolve_sampling_strategy(sampling_strategy, adaptive)
+    if planned_timestamps is None:
+        activity_profile: list[tuple[float, float]] = []
+        if strategy == "adaptive" and duration_sec > 0:
+            cap.release()
+            activity_profile = _compute_scene_activity(video_path)
+            cap = cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                return []
 
-    sample_timestamps = _build_sampling_timestamps(
-        duration_sec=duration_sec,
-        interval_seconds=interval_seconds,
-        max_screenshots=max_screenshots,
-        adaptive=adaptive,
-        activity_profile=activity_profile,
-        match_context=match_context,
-        game_start_offset=game_start_offset,
-    )
+        sample_timestamps = _build_sampling_timestamps(
+            duration_sec=duration_sec,
+            interval_seconds=interval_seconds,
+            max_screenshots=max_screenshots,
+            adaptive=(strategy == "adaptive"),
+            activity_profile=activity_profile,
+            match_context=match_context,
+            game_start_offset=game_start_offset,
+            sampling_strategy=strategy,
+            focus_window_seconds=focus_window_seconds,
+            focus_budget_ratio=focus_budget_ratio,
+            global_backfill=global_backfill,
+        )
+    else:
+        sample_timestamps = planned_timestamps
     logger.info("planned screenshots: %d timestamps", len(sample_timestamps))
 
     snapshots: list[SceneSnapshot] = []
