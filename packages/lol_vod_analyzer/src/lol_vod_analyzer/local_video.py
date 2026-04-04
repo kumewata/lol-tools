@@ -12,9 +12,15 @@ from google import genai
 from PIL import Image
 
 from lol_vod_analyzer.models import SceneSnapshot, TranscriptSegment, VideoSource
+from lol_vod_analyzer.momentum import important_time_windows
 from lol_vod_analyzer.system_tools import format_missing_tools_message
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MAX_SCREENSHOTS = 24
+DEFAULT_EARLY_GAME_WINDOW_SECONDS = 180
+DEFAULT_EARLY_GAME_RESERVED = 6
+DEFAULT_MOMENTUM_RESERVED = 12
 
 
 def get_video_metadata(video_path: Path) -> VideoSource:
@@ -218,6 +224,171 @@ def _adaptive_timestamps(
     return [ts for ts, _ in timestamps]
 
 
+def _fixed_interval_timestamps(
+    duration_sec: float,
+    interval_seconds: int,
+    *,
+    start_sec: float = 0.0,
+) -> list[float]:
+    if duration_sec <= 0 or interval_seconds <= 0 or start_sec >= duration_sec:
+        return []
+
+    timestamps: list[float] = []
+    current = max(0.0, start_sec)
+    while current < duration_sec:
+        timestamps.append(current)
+        current += interval_seconds
+    return timestamps
+
+
+def _evenly_spaced_timestamps(
+    start_sec: float,
+    end_sec: float,
+    count: int,
+) -> list[float]:
+    if count <= 0 or end_sec <= start_sec:
+        return []
+    if count == 1:
+        return [start_sec]
+
+    span = end_sec - start_sec
+    step = span / (count - 1)
+    return [start_sec + step * i for i in range(count)]
+
+
+def _merge_unique_timestamps(
+    *timestamp_groups: list[float],
+    limit: int,
+) -> list[float]:
+    seen: set[int] = set()
+    merged: list[float] = []
+
+    for group in timestamp_groups:
+        for ts in group:
+            key = int(round(ts * 1000))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(ts)
+            if len(merged) >= limit:
+                return sorted(merged)
+
+    return sorted(merged)
+
+
+def _momentum_candidate_timestamps(
+    match_context: dict | None,
+    *,
+    game_start_offset: int,
+    max_count: int,
+) -> list[float]:
+    if max_count <= 0 or not match_context:
+        return []
+
+    windows = important_time_windows(match_context)
+    if not windows:
+        return []
+    if len(windows) > max_count:
+        step = len(windows) / max_count
+        windows = [windows[int(step * i)] for i in range(max_count)]
+
+    candidates: list[float] = []
+    windows_per_count = max(1, len(windows))
+    base_count = max_count // windows_per_count
+    remainder = max_count % windows_per_count
+
+    for index, (start_sec, end_sec) in enumerate(windows):
+        count = max(1, base_count + (1 if index < remainder else 0))
+        window_start = game_start_offset + start_sec
+        window_end = game_start_offset + end_sec
+        candidates.extend(_evenly_spaced_timestamps(window_start, window_end, count))
+
+    return candidates
+
+
+def _early_game_timestamps(
+    duration_sec: float,
+    *,
+    game_start_offset: int,
+    reserved_count: int,
+    early_game_window_seconds: int,
+) -> list[float]:
+    if reserved_count <= 0:
+        return []
+
+    start_sec = min(max(0, game_start_offset), duration_sec)
+    end_sec = min(duration_sec, start_sec + early_game_window_seconds)
+    return _evenly_spaced_timestamps(start_sec, end_sec, reserved_count)
+
+
+def _build_sampling_timestamps(
+    *,
+    duration_sec: float,
+    interval_seconds: int,
+    max_screenshots: int,
+    adaptive: bool,
+    activity_profile: list[tuple[float, float]] | None = None,
+    match_context: dict | None = None,
+    game_start_offset: int = 0,
+    early_game_window_seconds: int = DEFAULT_EARLY_GAME_WINDOW_SECONDS,
+    early_game_reserved: int = DEFAULT_EARLY_GAME_RESERVED,
+    momentum_reserved: int = DEFAULT_MOMENTUM_RESERVED,
+) -> list[float]:
+    if duration_sec <= 0 or max_screenshots <= 0:
+        return []
+
+    has_gameplay_context = match_context is not None or game_start_offset > 0
+    early_budget = min(max_screenshots, early_game_reserved) if has_gameplay_context else 0
+    momentum_budget = (
+        min(max(0, max_screenshots - early_budget), momentum_reserved)
+        if match_context
+        else 0
+    )
+
+    early_candidates = _early_game_timestamps(
+        duration_sec,
+        game_start_offset=game_start_offset,
+        reserved_count=early_budget,
+        early_game_window_seconds=early_game_window_seconds,
+    )
+    momentum_candidates = _momentum_candidate_timestamps(
+        match_context,
+        game_start_offset=game_start_offset,
+        max_count=momentum_budget,
+    )
+
+    remaining = max_screenshots - len(
+        _merge_unique_timestamps(
+            early_candidates,
+            momentum_candidates,
+            limit=max_screenshots,
+        )
+    )
+
+    if adaptive and activity_profile:
+        adaptive_candidates = _adaptive_timestamps(
+            activity_profile,
+            float(interval_seconds),
+            max(max_screenshots, remaining),
+        )
+        backfill_candidates = [
+            ts for ts in adaptive_candidates if ts >= max(0, game_start_offset)
+        ]
+    else:
+        backfill_candidates = _fixed_interval_timestamps(
+            duration_sec,
+            interval_seconds,
+            start_sec=max(0, game_start_offset),
+        )
+
+    return _merge_unique_timestamps(
+        early_candidates,
+        momentum_candidates,
+        backfill_candidates,
+        limit=max_screenshots,
+    )
+
+
 def extract_screenshots(
     video_path: Path,
     output_dir: Path,
@@ -225,6 +396,9 @@ def extract_screenshots(
     *,
     adaptive: bool = False,
     speed: float = 1.0,
+    max_screenshots: int = DEFAULT_MAX_SCREENSHOTS,
+    match_context: dict | None = None,
+    game_start_offset: int = 0,
 ) -> list[SceneSnapshot]:
     """Extract screenshots from video using OpenCV.
 
@@ -247,64 +421,46 @@ def extract_screenshots(
         return []
 
     fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration_sec = total_frames / fps if fps > 0 else 0
+    if fps <= 0:
+        cap.release()
+        return []
 
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration_sec = total_frames / fps
+
+    activity_profile: list[tuple[float, float]] = []
     if adaptive and duration_sec > 0:
         cap.release()
-
-        # Pass 1: compute activity profile
-        profile = _compute_scene_activity(video_path)
-        max_frames = int(duration_sec / interval_seconds * 1.5)
-        sample_timestamps = _adaptive_timestamps(profile, float(interval_seconds), max_frames)
-
-        logger.info(
-            "adaptive screenshots: %d timestamps (max_frames=%d)",
-            len(sample_timestamps),
-            max_frames,
-        )
-
-        # Pass 2: extract frames at computed timestamps
+        activity_profile = _compute_scene_activity(video_path)
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
             return []
 
-        snapshots: list[SceneSnapshot] = []
-        for i, ts in enumerate(sample_timestamps):
-            target_frame = int(ts * fps)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
-            ret, frame = cap.read()
-            if not ret:
-                continue
+    sample_timestamps = _build_sampling_timestamps(
+        duration_sec=duration_sec,
+        interval_seconds=interval_seconds,
+        max_screenshots=max_screenshots,
+        adaptive=adaptive,
+        activity_profile=activity_profile,
+        match_context=match_context,
+        game_start_offset=game_start_offset,
+    )
+    logger.info("planned screenshots: %d timestamps", len(sample_timestamps))
 
-            game_time_ms = int(ts * 1000 * speed)
-            frame_path = output_dir / f"screenshot_{i:04d}_{game_time_ms // 1000}s.jpg"
-            cv2.imwrite(str(frame_path), frame)
-            snapshots.append(SceneSnapshot(timestamp_ms=game_time_ms, image_path=frame_path))
-
-        cap.release()
-        return snapshots
-
-    # Fixed interval (original behaviour)
-    snapshots = []
-    frame_interval = int(fps * interval_seconds)
-    frame_index = 0
-
-    while True:
-        target_frame = frame_index * frame_interval
+    snapshots: list[SceneSnapshot] = []
+    for i, ts in enumerate(sample_timestamps):
+        target_frame = max(0, min(int(ts * fps), max(total_frames - 1, 0)))
         cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
         ret, frame = cap.read()
         if not ret:
-            break
+            continue
 
         game_time_ms = int((target_frame / fps) * 1000 * speed)
-        frame_path = output_dir / f"screenshot_{frame_index:04d}_{game_time_ms // 1000}s.jpg"
+        frame_path = output_dir / f"screenshot_{i:04d}_{game_time_ms // 1000}s.jpg"
         cv2.imwrite(str(frame_path), frame)
-
         snapshots.append(
             SceneSnapshot(timestamp_ms=game_time_ms, image_path=frame_path)
         )
-        frame_index += 1
 
     cap.release()
     return snapshots

@@ -7,6 +7,7 @@ import pytest
 
 from lol_vod_analyzer.local_video import (
     _adaptive_timestamps,
+    _build_sampling_timestamps,
     _compute_scene_activity,
     get_video_metadata,
     extract_audio,
@@ -104,3 +105,41 @@ class TestAdaptiveTimestamps:
         profile = [(float(i), 0.1 * (i % 5)) for i in range(100)]
         timestamps = _adaptive_timestamps(profile, 5.0, 50)
         assert timestamps == sorted(timestamps)
+
+
+class TestBuildSamplingTimestamps:
+    def test_limits_total_screenshots(self):
+        timestamps = _build_sampling_timestamps(
+            duration_sec=1800,
+            interval_seconds=10,
+            max_screenshots=12,
+            adaptive=False,
+        )
+
+        assert len(timestamps) <= 12
+        assert timestamps == sorted(timestamps)
+
+    def test_reserves_early_game_samples(self):
+        timestamps = _build_sampling_timestamps(
+            duration_sec=1800,
+            interval_seconds=10,
+            max_screenshots=12,
+            adaptive=False,
+            game_start_offset=30,
+        )
+
+        assert timestamps[0] >= 30
+        assert any(ts <= 210 for ts in timestamps)
+
+    def test_uses_momentum_windows_when_match_context_exists(self):
+        timestamps = _build_sampling_timestamps(
+            duration_sec=1800,
+            interval_seconds=10,
+            max_screenshots=12,
+            adaptive=False,
+            match_context={
+                "gold_diff_timeline": [0] * 5 + [2000] * 3 + [0] * 10,
+            },
+        )
+
+        assert any(270 <= ts <= 450 for ts in timestamps)

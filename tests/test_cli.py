@@ -165,11 +165,22 @@ def test_replay_analyze_selects_requested_match(tmp_path: Path, monkeypatch) -> 
 
     captured: dict[str, object] = {}
 
-    def fake_run_vod(video_path: Path, match_data_path: Path, interval: int, no_open: bool, adaptive: bool = False, speed: float = 1.0) -> None:
+    def fake_run_vod(
+        video_path: Path,
+        match_data_path: Path,
+        interval: int,
+        no_open: bool,
+        adaptive: bool = False,
+        max_screenshots: int = 24,
+        keep_screenshots: bool = False,
+        speed: float = 1.0,
+    ) -> None:
         captured["video_path"] = video_path
         captured["interval"] = interval
         captured["no_open"] = no_open
         captured["adaptive"] = adaptive
+        captured["max_screenshots"] = max_screenshots
+        captured["keep_screenshots"] = keep_screenshots
         captured["speed"] = speed
         captured["match_data"] = json.loads(match_data_path.read_text(encoding="utf-8"))
 
@@ -195,6 +206,8 @@ def test_replay_analyze_selects_requested_match(tmp_path: Path, monkeypatch) -> 
     assert captured["video_path"] == video_path
     assert captured["interval"] == 7
     assert captured["no_open"] is True
+    assert captured["max_screenshots"] == 24
+    assert captured["keep_screenshots"] is False
     assert captured["match_data"] == {
         "matches": [
             {"match_id": "match-2", "champion": "Viego", "role": "JUNGLE", "queue_type": "RANKED_SOLO", "timestamp_ms": 2},

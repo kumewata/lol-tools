@@ -239,6 +239,8 @@ def _run_vod_gameplay_for_replay(
     interval: int,
     no_open: bool,
     adaptive: bool = False,
+    max_screenshots: int = 24,
+    keep_screenshots: bool = False,
     speed: float = 1.0,
 ) -> None:
     from lol_vod_analyzer.main import analyze as vod_analyze
@@ -250,6 +252,8 @@ def _run_vod_gameplay_for_replay(
         interval=interval,
         match_data=str(match_data_path),
         adaptive=adaptive,
+        max_screenshots=max_screenshots,
+        keep_screenshots=keep_screenshots,
         speed=speed,
     )
 
@@ -342,6 +346,8 @@ def replay_analyze(
     match_index: int = typer.Option(0, "--match-index", min=0, help="候補のうち何番目の試合を使うか。0 が最新"),
     interval: int = typer.Option(5, min=1, help="スクリーンショット間隔（秒）"),
     adaptive: bool = typer.Option(False, "--adaptive", help="シーン変化量に基づく適応的スクリーンショット抽出"),
+    max_screenshots: int = typer.Option(24, "--max-screenshots", min=1, help="分析に使うスクリーンショットの上限"),
+    keep_screenshots: bool = typer.Option(False, "--keep-screenshots", help="抽出したスクリーンショットを分析後も保持する"),
     speed: float = typer.Option(1.0, "--speed", min=0.25, max=8.0, help="リプレイの再生速度（例: 2倍速なら 2.0）"),
     no_open: bool = typer.Option(False, "--no-open", help="ブラウザを開かない"),
 ) -> None:
@@ -370,6 +376,8 @@ def replay_analyze(
             interval=interval,
             no_open=no_open,
             adaptive=adaptive,
+            max_screenshots=max_screenshots,
+            keep_screenshots=keep_screenshots,
             speed=speed,
         )
     finally:
