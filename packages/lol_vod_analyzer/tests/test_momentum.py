@@ -5,6 +5,7 @@ from lol_vod_analyzer.momentum import (
     compute_momentum,
     compute_win_probability,
     filter_important_timestamps,
+    important_time_windows,
 )
 
 
@@ -176,3 +177,19 @@ class TestCompressMatchContext:
         ctx = {"champion": "Jinx", "gold_diff_timeline": [], "kill_timestamps": [100]}
         result = compress_match_context(ctx)
         assert result is ctx
+
+
+class TestImportantTimeWindows:
+    def test_returns_merged_windows(self):
+        ctx = {
+            "gold_diff_timeline": [0, 0, 0, 1000, 1000, 1000, 0, 0],
+        }
+
+        windows = important_time_windows(ctx, expansion_seconds=30, frame_interval_sec=60)
+
+        assert windows
+        assert windows[0][0] >= 0
+        assert windows == sorted(windows)
+
+    def test_returns_empty_without_gold_diff(self):
+        assert important_time_windows({"champion": "Jinx"}) == []
