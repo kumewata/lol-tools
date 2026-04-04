@@ -107,28 +107,60 @@ def _frame_index_to_seconds(index: int, frame_interval_sec: int = 60) -> int:
     return index * frame_interval_sec
 
 
+def important_time_windows(
+    match_context: dict,
+    *,
+    expansion_seconds: int = 30,
+    frame_interval_sec: int = 60,
+    threshold_percentile: float = 75.0,
+) -> list[tuple[int, int]]:
+    """Return important game-time windows derived from momentum swings."""
+    gold_diff = match_context.get("gold_diff_timeline")
+    if not gold_diff or not isinstance(gold_diff, list):
+        return []
+
+    win_probs = compute_win_probability(gold_diff)
+    momentum = compute_momentum(win_probs)
+    important_indices = sorted(
+        filter_important_timestamps(
+            momentum,
+            threshold_percentile=threshold_percentile,
+        )
+    )
+    if not important_indices:
+        return []
+
+    windows: list[tuple[int, int]] = []
+    for idx in important_indices:
+        centre = _frame_index_to_seconds(idx, frame_interval_sec=frame_interval_sec)
+        start = max(0, centre - expansion_seconds)
+        end = centre + expansion_seconds
+
+        if windows and start <= windows[-1][1]:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], end))
+        else:
+            windows.append((start, end))
+
+    return windows
+
+
 def compress_match_context(match_context: dict) -> dict:
     """Filter match_context events to keep only those near high-momentum timestamps.
 
     If gold_diff_timeline is missing or empty, returns the original context
     unchanged (fallback).
     """
-    gold_diff = match_context.get("gold_diff_timeline")
-    if not gold_diff or not isinstance(gold_diff, list):
+    windows = important_time_windows(match_context)
+    if not windows:
         logger.debug("gold_diff_timeline unavailable — skipping compression")
         return match_context
-
-    win_probs = compute_win_probability(gold_diff)
-    momentum = compute_momentum(win_probs)
-    important_indices = filter_important_timestamps(momentum)
 
     # gold_diff_timeline entries are per-frame (typically 1 frame = 60 sec).
     # Build a set of game-seconds that are "important", ±30 sec around each.
     important_seconds: set[int] = set()
-    for idx in important_indices:
-        centre = _frame_index_to_seconds(idx)
-        for offset in range(-30, 31):
-            important_seconds.add(centre + offset)
+    for start, end in windows:
+        for ts in range(start, end + 1):
+            important_seconds.add(ts)
 
     # --- filter timestamp-bearing event lists --------------------------------
     event_keys = (

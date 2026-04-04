@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -88,6 +90,43 @@ def _build_match_context(findings: object) -> tuple[dict | None, list[str]]:
     return match_context, errors
 
 
+def _select_report_snapshots(
+    snapshots: list[SceneSnapshot],
+    *,
+    key_timestamps_ms: list[int],
+    max_snapshots: int = 6,
+) -> list[SceneSnapshot]:
+    if not snapshots or max_snapshots <= 0:
+        return []
+
+    selected: list[SceneSnapshot] = []
+    used_paths: set[Path] = set()
+
+    for target_ms in key_timestamps_ms:
+        nearest = min(
+            snapshots,
+            key=lambda snap: abs(snap.timestamp_ms - target_ms),
+        )
+        if nearest.image_path in used_paths:
+            continue
+        selected.append(nearest)
+        used_paths.add(nearest.image_path)
+        if len(selected) >= max_snapshots:
+            return sorted(selected, key=lambda snap: snap.timestamp_ms)
+
+    if len(selected) < max_snapshots:
+        step = max(1, len(snapshots) // max_snapshots)
+        for snap in snapshots[::step]:
+            if snap.image_path in used_paths:
+                continue
+            selected.append(snap)
+            used_paths.add(snap.image_path)
+            if len(selected) >= max_snapshots:
+                break
+
+    return sorted(selected, key=lambda snap: snap.timestamp_ms)
+
+
 @app.command()
 def analyze(
     source: str = typer.Argument(help="YouTube URL or local video file path"),
@@ -102,6 +141,8 @@ def analyze(
         None, "--match-data", help="Path to lol_review findings JSON for match context"
     ),
     adaptive: bool = typer.Option(False, "--adaptive", help="Use adaptive screenshot intervals based on scene activity"),
+    max_screenshots: int = typer.Option(24, "--max-screenshots", min=1, help="Maximum number of screenshots used for analysis"),
+    keep_screenshots: bool = typer.Option(False, "--keep-screenshots", help="Keep extracted screenshots on disk after report generation"),
     speed: float = typer.Option(1.0, "--speed", min=0.25, max=8.0, help="Replay playback speed multiplier (e.g. 2.0 for 2x speed replays)"),
     game_start: int = typer.Option(0, "--game-start", help="動画上の試合開始時刻（秒）。動画の先頭が試合開始でない場合に指定"),
 ) -> None:
@@ -156,6 +197,8 @@ def analyze(
                     interval=interval,
                     match_context=match_context,
                     adaptive=adaptive,
+                    max_screenshots=max_screenshots,
+                    keep_screenshots=keep_screenshots,
                     speed=speed,
                     game_start_offset=game_start,
                 )
@@ -189,6 +232,8 @@ def analyze(
                 interval=interval,
                 match_context=match_context,
                 adaptive=adaptive,
+                max_screenshots=max_screenshots,
+                keep_screenshots=keep_screenshots,
                 speed=speed,
                 game_start_offset=game_start,
             )
@@ -285,6 +330,8 @@ async def _download_and_analyze(
     interval: int = 10,
     match_context: dict | None = None,
     adaptive: bool = False,
+    max_screenshots: int = 24,
+    keep_screenshots: bool = False,
     speed: float = 1.0,
     game_start_offset: int = 0,
 ) -> None:
@@ -315,6 +362,8 @@ async def _download_and_analyze(
         match_context=match_context,
         original_url=url,
         adaptive=adaptive,
+        max_screenshots=max_screenshots,
+        keep_screenshots=keep_screenshots,
         speed=speed,
         game_start_offset=game_start_offset,
     )
@@ -329,6 +378,8 @@ async def _analyze_local(
     match_context: dict | None = None,
     original_url: str | None = None,
     adaptive: bool = False,
+    max_screenshots: int = 24,
+    keep_screenshots: bool = False,
     speed: float = 1.0,
     game_start_offset: int = 0,
 ) -> None:
@@ -339,84 +390,107 @@ async def _analyze_local(
         console.print(f"[red]Error:[/] {format_missing_tools_message(missing, 'ローカル動画分析')}")
         raise typer.Exit(1)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("動画情報を取得中...", total=None)
-        try:
-            video_source = get_video_metadata(video_path)
-        except RuntimeError as exc:
-            console.print(f"[red]Error:[/] {exc}")
-            raise typer.Exit(1) from exc
-        if original_url:
-            video_source.url = original_url
-            video_source.source_type = "youtube"
-        console.print(f"[green]Title:[/] {video_source.title}")
-        console.print(f"[green]Duration:[/] {video_source.duration // 60}分{video_source.duration % 60}秒")
-        if speed != 1.0:
-            game_duration = int(video_source.duration * speed)
-            console.print(f"[green]Speed:[/] {speed}x（実試合時間: {game_duration // 60}分{game_duration % 60}秒）")
-            video_source.duration = game_duration
-        progress.update(task, completed=True)
+    screenshot_root = PACKAGE_ROOT / "output" / "screenshots"
+    screenshot_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    screenshot_dir = Path(tempfile.mkdtemp(prefix="run_", dir=str(screenshot_root)))
+    output_path: Path | None = None
 
-        # Extract audio and transcribe (skip for gameplay mode — game SE is noise)
-        transcript: list = []
-        if mode != "gameplay":
-            progress.update(task, description="音声を抽出中...")
-            audio_dir = PACKAGE_ROOT / "output" / "audio"
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("動画情報を取得中...", total=None)
             try:
-                audio_path = extract_audio(video_path, audio_dir)
+                video_source = get_video_metadata(video_path)
             except RuntimeError as exc:
                 console.print(f"[red]Error:[/] {exc}")
                 raise typer.Exit(1) from exc
 
-            if audio_path is not None:
-                console.print(f"[green]音声抽出:[/] {audio_path.name}")
-                progress.update(task, description="音声を文字起こし中（Gemini）...")
-                transcript = transcribe_audio(audio_path, api_key=api_key)
-                console.print(f"[green]字幕セグメント:[/] {len(transcript)}件")
+            if original_url:
+                video_source.url = original_url
+                video_source.source_type = "youtube"
+            console.print(f"[green]Title:[/] {video_source.title}")
+            console.print(f"[green]Duration:[/] {video_source.duration // 60}分{video_source.duration % 60}秒")
+            if speed != 1.0:
+                game_duration = int(video_source.duration * speed)
+                console.print(f"[green]Speed:[/] {speed}x（実試合時間: {game_duration // 60}分{game_duration % 60}秒）")
+                video_source.duration = game_duration
+            progress.update(task, completed=True)
+
+            transcript: list = []
+            if mode != "gameplay":
+                progress.update(task, description="音声を抽出中...")
+                audio_dir = PACKAGE_ROOT / "output" / "audio"
+                try:
+                    audio_path = extract_audio(video_path, audio_dir)
+                except RuntimeError as exc:
+                    console.print(f"[red]Error:[/] {exc}")
+                    raise typer.Exit(1) from exc
+
+                if audio_path is not None:
+                    console.print(f"[green]音声抽出:[/] {audio_path.name}")
+                    progress.update(task, description="音声を文字起こし中（Gemini）...")
+                    transcript = transcribe_audio(audio_path, api_key=api_key)
+                    console.print(f"[green]字幕セグメント:[/] {len(transcript)}件")
+                else:
+                    console.print("[yellow]音声トラックなし[/]")
             else:
-                console.print("[yellow]音声トラックなし[/]")
-        else:
-            console.print("[dim]gameplay モード — 音声文字起こしをスキップ（ゲームSEはノイズのため）[/]")
+                console.print("[dim]gameplay モード — 音声文字起こしをスキップ（ゲームSEはノイズのため）[/]")
 
-        # Extract screenshots
-        progress.update(task, description="スクリーンショットを抽出中...")
-        screenshot_dir = PACKAGE_ROOT / "output" / "screenshots"
-        snapshots = extract_screenshots(video_path, screenshot_dir, interval_seconds=interval, adaptive=adaptive, speed=speed)
-        console.print(f"[green]スクリーンショット:[/] {len(snapshots)}枚")
+            progress.update(task, description="スクリーンショットを抽出中...")
+            snapshots = extract_screenshots(
+                video_path,
+                screenshot_dir,
+                interval_seconds=interval,
+                adaptive=adaptive,
+                speed=speed,
+                max_screenshots=max_screenshots,
+                match_context=match_context,
+                game_start_offset=game_start_offset,
+            )
+            console.print(f"[green]スクリーンショット:[/] {len(snapshots)}枚")
 
-        # Determine mode (only auto-detect if not specified)
-        if mode is None:
-            mode = "gameplay" if len(transcript) < 10 else "commentary"
-        console.print(f"[green]分析モード:[/] {mode}")
+            if mode is None:
+                mode = "gameplay" if len(transcript) < 10 else "commentary"
+            console.print(f"[green]分析モード:[/] {mode}")
 
-        if game_start_offset:
-            console.print(f"[green]試合開始オフセット:[/] 動画の {game_start_offset // 60}分{game_start_offset % 60}秒地点")
+            if game_start_offset:
+                console.print(f"[green]試合開始オフセット:[/] 動画の {game_start_offset // 60}分{game_start_offset % 60}秒地点")
 
-        # Run LLM analysis
-        progress.update(task, description="LLMで分析中...")
-        chunks = chunk_transcript(transcript)
-        console.print(f"[green]チャンク数:[/] {len(chunks)}")
+            progress.update(task, description="LLMで分析中...")
+            chunks = chunk_transcript(transcript)
+            console.print(f"[green]チャンク数:[/] {len(chunks)}")
 
-        result = await analyze_video(
-            source=video_source,
-            transcript=transcript,
-            snapshots=snapshots,
-            mode=mode,
-            api_key=api_key,
-            match_context=match_context,
-            game_start_offset=game_start_offset,
-        )
+            result = await analyze_video(
+                source=video_source,
+                transcript=transcript,
+                snapshots=snapshots,
+                mode=mode,
+                api_key=api_key,
+                match_context=match_context,
+                game_start_offset=game_start_offset,
+            )
 
-        # Generate report
-        progress.update(task, description="レポートを生成中...")
-        output_path = generate_report(result, open_browser=open_browser)
-        progress.update(task, completed=True)
+            result.snapshots = _select_report_snapshots(
+                snapshots,
+                key_timestamps_ms=[
+                    key_moment.timestamp_ms for key_moment in result.key_moments
+                ],
+            )
 
-    console.print(f"\n[green]レポートを保存しました:[/] {output_path}")
+            progress.update(task, description="レポートを生成中...")
+            output_path = generate_report(result, open_browser=open_browser)
+            progress.update(task, completed=True)
+
+        if output_path is not None:
+            console.print(f"\n[green]レポートを保存しました:[/] {output_path}")
+        if keep_screenshots:
+            console.print(f"[green]スクリーンショット保存先:[/] {screenshot_dir}")
+    finally:
+        if not keep_screenshots:
+            shutil.rmtree(screenshot_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

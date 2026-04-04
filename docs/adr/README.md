@@ -24,3 +24,4 @@ tags: [ADR, アーキテクチャ, インデックス]
 | [ADR-011](ADR-011-single-match-data-for-vod-analysis.md) | 動画分析の match-data を単一試合 JSON に限定する | 全体 | Accepted |
 | [ADR-012](ADR-012-adaptive-interval-and-momentum-compression.md) | 適応的スクリーンショット間隔とモメンタム圧縮 | lol_vod_analyzer | Accepted |
 | [ADR-013](ADR-013-game-start-offset.md) | 動画上の試合開始オフセットによるタイムライン同期 | lol_vod_analyzer | Accepted |
+| [ADR-014](ADR-014-weighted-screenshot-selection.md) | 重要シーン優先のスクリーンショット選定 | lol_vod_analyzer | Accepted |
