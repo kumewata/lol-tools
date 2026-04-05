@@ -63,6 +63,7 @@ ffmpeg -f avfoundation -i "1:none" -t 900 -r 10 -vf scale=1280:720 ~/Desktop/rep
 ## 参照先
 
 詳細手順が必要なら [docs/replay-recording-guide.md](../../docs/replay-recording-guide.md) を開く。
+長尺 replay を proxy 化して `vod analyze` の dry-run や focused sampling まで進めたい場合は [docs/long-vod-workflow.md](../../docs/long-vod-workflow.md) を開く。
 
 ## 注意点
 
@@ -71,3 +72,4 @@ ffmpeg -f avfoundation -i "1:none" -t 900 -r 10 -vf scale=1280:720 ~/Desktop/rep
 - 低画質すぎる動画は避ける
 - 対象試合が直近数試合から外れているなら `--review-count` を増やす
 - リプレイを倍速で再生して録画した場合は `--speed` オプションでタイムスタンプを補正する
+- 長尺 replay を詰めるときは、録画後に proxy 動画を作って dry-run から入ると再現しやすい

@@ -161,6 +161,7 @@ uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --download --mode
 自分の試合録画を対象にした、もっとも精度の高いプレイ分析フロー。
 
 録画方法が分からない場合は [自分のリプレイ動画を用意する手順](docs/replay-recording-guide.md) を参照。Windows で録画したい場合は [Windows 向けリプレイ録画ガイド](docs/replay-recording-guide-windows.md) も使える。
+長尺 VOD の前処理から dry-run、本実行、通常 / focused 比較までを通しで見たい場合は [長尺 VOD の標準フロー](docs/long-vod-workflow.md) を参照。
 
 ```bash
 # 標準フロー: replay analyze が試合データ取得と動画分析をつなぐ
@@ -205,6 +206,7 @@ start "" "C:\Users\<you>\Desktop\lol-tools\packages\lol_vod_analyzer\output\vod_
 このワークフローは、自分の試合を Riot API の試合データと紐付けて分析できる前提のため、プレイ動画分析の中では標準機能として扱う。
 
 詳細な録画手順は [docs/replay-recording-guide.md](docs/replay-recording-guide.md) を参照。Windows だけを見たい場合は [docs/replay-recording-guide-windows.md](docs/replay-recording-guide-windows.md) を参照。
+長尺 replay の proxy 作成、`--speed` / `--game-start`、`--dry-run-sampling`、`--sampling-strategy focused`、sampling report 比較まで含めた再現フローは [docs/long-vod-workflow.md](docs/long-vod-workflow.md) にまとめている。
 
 ```bash
 # 1. 試合データを取得
@@ -219,6 +221,29 @@ uv run lol-tools replay analyze ~/Desktop/replay.mov
 ```
 
 Windows では Xbox Game Bar や OBS で `.mp4` を録画して、同じ `replay analyze` に渡せばよい。`ffmpeg` を使う場合は `gdigrab` など Windows 向け入力を使う。
+
+## 長尺 VOD を扱うときの基本方針
+
+- 長い gameplay 動画は、必要に応じて `ffmpeg` で軽量 proxy 動画を作ってから検証すると速い
+- `vod analyze --match-data` には複数試合入りの `latest_findings.json` を直接渡さず、`export-match-data` で単一試合 JSON を作る
+- 2 倍速 replay は `--speed 2.0`、動画先頭に待機時間があるときは `--game-start <秒>` を使う
+- 本実行の前に `--dry-run-sampling` と `--dump-sampling-report` で screenshot 配分を確認すると、長尺 VOD の調整がしやすい
+- `--sampling-strategy focused` と `--focus-profile` / `--focus-window-seconds` / `--focus-budget-ratio` / `--global-backfill` を使うと、重要局面への寄せ方を調整できる
+
+代表例:
+
+```bash
+uv run lol-tools vod analyze path/to/replay.proxy.mp4 \
+  --mode gameplay \
+  --match-data packages/lol_review/output/match_data_index2.json \
+  --sampling-strategy focused \
+  --focus-profile balanced \
+  --dry-run-sampling \
+  --dump-sampling-report packages/lol_vod_analyzer/output/focused_sampling_report.json \
+  --speed 2.0 \
+  --game-start 90 \
+  --no-open
+```
 
 ## 補助コマンド
 

@@ -2,7 +2,7 @@
 
 `lol-tools replay analyze` で精度の高い分析をするには、LoL クライアントのリプレイを再生して、その画面を動画として保存しておく必要がある。
 
-このドキュメントは、`自分の試合録画を用意する` ところだけに絞った手順書。
+このドキュメントは、`自分の試合録画を用意する` ところだけに絞った手順書。長尺 replay の proxy 作成、dry-run、focused sampling 比較まで含めた全体フローは [docs/long-vod-workflow.md](./long-vod-workflow.md) を参照。
 
 ## 前提
 
@@ -133,6 +133,8 @@ uv run lol-tools replay analyze path/to/replay.mp4
 - 画質が低すぎるとチャンピオンや UI の認識が不安定になる
 - できれば 720p 以上で保存する
 - 対象試合が直近数試合から外れているなら `--review-count` を増やす
+- 2 倍速で録画したなら、分析時に `--speed 2.0` を付ける
+- 長尺 replay は、録画後に proxy 動画を作ってから検証すると扱いやすい
 
 ## よくある詰まりどころ
 
