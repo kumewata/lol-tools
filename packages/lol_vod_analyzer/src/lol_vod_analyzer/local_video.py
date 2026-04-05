@@ -25,6 +25,8 @@ DEFAULT_MOMENTUM_RESERVED = 12
 DEFAULT_FOCUS_WINDOW_SECONDS = 45
 DEFAULT_FOCUS_BUDGET_RATIO = 0.75
 DEFAULT_GLOBAL_BACKFILL = 4
+DEFAULT_OBJECTIVE_MERGE_GAP_SECONDS = 30
+DEFAULT_MAX_MOMENTUM_WINDOW_SECONDS = 180
 
 
 def get_video_metadata(video_path: Path) -> VideoSource:
@@ -428,6 +430,57 @@ def _merge_focus_windows(windows: list[dict]) -> list[dict]:
     return merged
 
 
+def _compress_focus_windows(
+    windows: list[dict],
+    *,
+    objective_merge_gap_seconds: int = DEFAULT_OBJECTIVE_MERGE_GAP_SECONDS,
+    max_momentum_window_seconds: int = DEFAULT_MAX_MOMENTUM_WINDOW_SECONDS,
+) -> list[dict]:
+    if not windows:
+        return []
+
+    compressed: list[dict] = []
+
+    for window in sorted(windows, key=lambda w: (w["start_sec"], w["end_sec"], -w["priority"])):
+        current = {
+            "id": window["id"],
+            "reason": window["reason"],
+            "reasons": list(window["reasons"]),
+            "priority": window["priority"],
+            "start_sec": window["start_sec"],
+            "end_sec": window["end_sec"],
+            "source_events": list(window["source_events"]),
+        }
+
+        if (
+            compressed
+            and current["reason"] == "objective"
+            and compressed[-1]["reason"] == "objective"
+            and current["start_sec"] - compressed[-1]["end_sec"] <= objective_merge_gap_seconds
+        ):
+            previous = compressed[-1]
+            previous["end_sec"] = max(previous["end_sec"], current["end_sec"])
+            previous["priority"] = max(previous["priority"], current["priority"])
+            previous["source_events"].extend(current["source_events"])
+            continue
+
+        if current["reason"] == "momentum" and max_momentum_window_seconds > 0:
+            duration = current["end_sec"] - current["start_sec"]
+            if duration > max_momentum_window_seconds:
+                current["end_sec"] = current["start_sec"] + max_momentum_window_seconds
+                for event in current["source_events"]:
+                    if event.get("type") == "momentum":
+                        event["original_end_sec"] = event["end_sec"]
+                        event["end_sec"] = min(
+                            event["start_sec"] + max_momentum_window_seconds,
+                            event["end_sec"],
+                        )
+
+        compressed.append(current)
+
+    return compressed
+
+
 def _build_focus_windows(
     *,
     duration_sec: float,
@@ -524,7 +577,7 @@ def _build_focus_windows(
             )
         )
 
-    return _merge_focus_windows(windows)
+    return _compress_focus_windows(_merge_focus_windows(windows))
 
 
 def _allocate_focus_counts(

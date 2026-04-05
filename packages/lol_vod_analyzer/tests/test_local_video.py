@@ -7,6 +7,7 @@ import pytest
 
 from lol_vod_analyzer.local_video import (
     _adaptive_timestamps,
+    _compress_focus_windows,
     _build_focus_windows,
     _build_focused_sampling_report,
     _build_sampling_timestamps,
@@ -189,6 +190,71 @@ class TestFocusedSampling:
         assert "objective" in reasons
         assert "momentum" in reasons
         assert "level_6" in reasons
+
+    def test_compress_focus_windows_merges_nearby_objectives(self):
+        windows = _compress_focus_windows([
+            {
+                "id": "objective_538",
+                "reason": "objective",
+                "reasons": ["objective"],
+                "priority": 90,
+                "start_sec": 493.0,
+                "end_sec": 583.0,
+                "source_events": [{"type": "ELITE_MONSTER_KILL", "timestamp_sec": 538}],
+            },
+            {
+                "id": "objective_656",
+                "reason": "objective",
+                "reasons": ["objective"],
+                "priority": 90,
+                "start_sec": 611.0,
+                "end_sec": 701.0,
+                "source_events": [{"type": "ELITE_MONSTER_KILL", "timestamp_sec": 656}],
+            },
+            {
+                "id": "objective_669",
+                "reason": "objective",
+                "reasons": ["objective"],
+                "priority": 90,
+                "start_sec": 624.0,
+                "end_sec": 714.0,
+                "source_events": [{"type": "ELITE_MONSTER_KILL", "timestamp_sec": 669}],
+            },
+            {
+                "id": "objective_900",
+                "reason": "objective",
+                "reasons": ["objective"],
+                "priority": 90,
+                "start_sec": 855.0,
+                "end_sec": 945.0,
+                "source_events": [{"type": "ELITE_MONSTER_KILL", "timestamp_sec": 900}],
+            },
+        ])
+
+        assert len(windows) == 2
+        assert windows[0]["reason"] == "objective"
+        assert windows[0]["start_sec"] == 493.0
+        assert windows[0]["end_sec"] == 714.0
+        assert len(windows[0]["source_events"]) == 3
+        assert windows[1]["start_sec"] == 855.0
+
+    def test_compress_focus_windows_caps_momentum_duration(self):
+        windows = _compress_focus_windows([
+            {
+                "id": "momentum_0",
+                "reason": "momentum",
+                "reasons": ["momentum"],
+                "priority": 80,
+                "start_sec": 210.0,
+                "end_sec": 690.0,
+                "source_events": [{"type": "momentum", "start_sec": 210, "end_sec": 690}],
+            },
+        ])
+
+        assert len(windows) == 1
+        assert windows[0]["end_sec"] == 390.0
+        assert windows[0]["source_events"][0]["original_end_sec"] == 690
+        assert windows[0]["source_events"][0]["end_sec"] == 390
 
     def test_build_focused_sampling_report_respects_budget(self):
         windows = [

@@ -120,6 +120,29 @@ class TestParseChunkResponse:
         assert "This is not JSON" in chunk.summary
         assert chunk.key_moments == []
 
+    def test_parse_skips_invalid_key_moment_timestamp(self):
+        response_text = json.dumps({
+            "summary": "重要場面の要約",
+            "key_moments": [
+                {
+                    "timestamp_ms": "不明",
+                    "label": "無効な場面",
+                    "analysis": "タイムスタンプが壊れている",
+                },
+                {
+                    "timestamp_ms": 10000,
+                    "label": "有効な場面",
+                    "analysis": "こちらは残る",
+                },
+            ],
+        })
+
+        chunk = parse_chunk_response(response_text, chunk_index=0, start_ms=0, end_ms=180000)
+
+        assert chunk.summary == "重要場面の要約"
+        assert len(chunk.key_moments) == 1
+        assert chunk.key_moments[0].timestamp_ms == 10000
+
 
 class TestParseSynthesisResponse:
     def test_parse_valid_synthesis(self):

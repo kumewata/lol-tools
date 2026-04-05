@@ -9,6 +9,7 @@ from typing import Literal
 
 from google import genai
 from PIL import Image
+from pydantic import ValidationError
 
 from lol_vod_analyzer.models import (
     AnalysisResult,
@@ -21,6 +22,18 @@ from lol_vod_analyzer.models import (
 )
 
 MODEL_NAME = "gemini-2.5-flash"
+
+
+def _parse_key_moments(items: list[dict] | None) -> list[KeyMoment]:
+    key_moments: list[KeyMoment] = []
+
+    for item in items or []:
+        try:
+            key_moments.append(KeyMoment(**item))
+        except (TypeError, ValidationError):
+            continue
+
+    return key_moments
 
 
 def _format_position(position: dict | None) -> str:
@@ -168,9 +181,7 @@ def parse_chunk_response(
 ) -> ChunkAnalysis:
     try:
         data = json.loads(_extract_json(response_text))
-        key_moments = [
-            KeyMoment(**km) for km in data.get("key_moments", [])
-        ]
+        key_moments = _parse_key_moments(data.get("key_moments", []))
         return ChunkAnalysis(
             chunk_index=chunk_index,
             start_ms=start_ms,
@@ -193,13 +204,11 @@ def parse_synthesis_response(response_text: str) -> dict:
         data = json.loads(_extract_json(response_text))
         return {
             "summary": data.get("summary", ""),
-            "key_moments": [
-                KeyMoment(**km) for km in data.get("key_moments", [])
-            ],
+            "key_moments": _parse_key_moments(data.get("key_moments", [])),
             "topics": [Topic(**t) for t in data.get("topics", [])],
             "actionable_tips": data.get("actionable_tips", []),
         }
-    except (json.JSONDecodeError, KeyError, TypeError):
+    except (json.JSONDecodeError, KeyError, TypeError, ValidationError):
         return {
             "summary": response_text.strip(),
             "key_moments": [],
