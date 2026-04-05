@@ -25,6 +25,7 @@ from lol_vod_analyzer.fetcher import (
     find_storyboard_format,
 )
 from lol_vod_analyzer.local_video import (
+    VALID_FOCUS_PROFILES,
     extract_audio,
     extract_screenshots,
     get_video_metadata,
@@ -147,6 +148,11 @@ def analyze(
         "--sampling-strategy",
         help="Screenshot sampling strategy: fixed, adaptive, or focused",
     ),
+    focus_profile: str | None = typer.Option(
+        None,
+        "--focus-profile",
+        help="Focus profile for focused sampling: balanced, lane, objective, or roam",
+    ),
     max_screenshots: int = typer.Option(24, "--max-screenshots", min=1, help="Maximum number of screenshots used for analysis"),
     keep_screenshots: bool = typer.Option(False, "--keep-screenshots", help="Keep extracted screenshots on disk after report generation"),
     dry_run_sampling: bool = typer.Option(False, "--dry-run-sampling", help="Only compute screenshot allocation and exit"),
@@ -165,6 +171,18 @@ def analyze(
     `uv run lol-tools examples`
     """
     load_dotenv(_ENV_PATH)
+
+    if focus_profile is not None:
+        focus_profile = focus_profile.strip().lower()
+        if focus_profile not in VALID_FOCUS_PROFILES:
+            valid = ", ".join(sorted(VALID_FOCUS_PROFILES))
+            console.print(f"[red]Error:[/] --focus-profile は {valid} のいずれかを指定してください")
+            raise typer.Exit(1)
+        if sampling_strategy is None:
+            sampling_strategy = "focused"
+        elif sampling_strategy != "focused":
+            console.print("[red]Error:[/] --focus-profile は --sampling-strategy focused と一緒に使ってください")
+            raise typer.Exit(1)
 
     # Load match context from lol_review findings JSON if provided
     match_context: dict | None = None
@@ -209,6 +227,7 @@ def analyze(
                     match_context=match_context,
                     adaptive=adaptive,
                     sampling_strategy=sampling_strategy,
+                    focus_profile=focus_profile,
                     max_screenshots=max_screenshots,
                     keep_screenshots=keep_screenshots,
                     dry_run_sampling=dry_run_sampling,
@@ -250,6 +269,7 @@ def analyze(
                 match_context=match_context,
                 adaptive=adaptive,
                 sampling_strategy=sampling_strategy,
+                focus_profile=focus_profile,
                 max_screenshots=max_screenshots,
                 keep_screenshots=keep_screenshots,
                 dry_run_sampling=dry_run_sampling,
@@ -354,6 +374,7 @@ async def _download_and_analyze(
     match_context: dict | None = None,
     adaptive: bool = False,
     sampling_strategy: str | None = None,
+    focus_profile: str | None = None,
     max_screenshots: int = 24,
     keep_screenshots: bool = False,
     dry_run_sampling: bool = False,
@@ -392,6 +413,7 @@ async def _download_and_analyze(
         original_url=url,
         adaptive=adaptive,
         sampling_strategy=sampling_strategy,
+        focus_profile=focus_profile,
         max_screenshots=max_screenshots,
         keep_screenshots=keep_screenshots,
         dry_run_sampling=dry_run_sampling,
@@ -414,6 +436,7 @@ async def _analyze_local(
     original_url: str | None = None,
     adaptive: bool = False,
     sampling_strategy: str | None = None,
+    focus_profile: str | None = None,
     max_screenshots: int = 24,
     keep_screenshots: bool = False,
     dry_run_sampling: bool = False,
@@ -469,14 +492,18 @@ async def _analyze_local(
                 match_context=match_context,
                 game_start_offset=game_start_offset,
                 sampling_strategy=sampling_strategy,
+                focus_profile=focus_profile,
                 focus_window_seconds=focus_window_seconds,
                 focus_budget_ratio=focus_budget_ratio,
                 global_backfill=global_backfill,
+                speed=speed,
             )
             console.print(
                 f"[green]Sampling Strategy:[/] {sampling_report.get('strategy')} "
                 f"({len(sampling_report.get('final_timestamps_sec', []))} timestamps)"
             )
+            if sampling_report.get("focus_profile"):
+                console.print(f"[green]Focus Profile:[/] {sampling_report['focus_profile']}")
             if dump_sampling_report is not None:
                 dump_sampling_report.parent.mkdir(parents=True, exist_ok=True)
                 dump_sampling_report.write_text(
@@ -523,6 +550,7 @@ async def _analyze_local(
                 focus_window_seconds=focus_window_seconds,
                 focus_budget_ratio=focus_budget_ratio,
                 global_backfill=global_backfill,
+                focus_profile=sampling_report.get("focus_profile"),
                 planned_timestamps=sampling_report.get("final_timestamps_sec", []),
             )
             console.print(f"[green]スクリーンショット:[/] {len(snapshots)}枚")

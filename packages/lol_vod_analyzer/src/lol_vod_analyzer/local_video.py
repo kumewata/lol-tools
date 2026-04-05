@@ -27,6 +27,23 @@ DEFAULT_FOCUS_BUDGET_RATIO = 0.75
 DEFAULT_GLOBAL_BACKFILL = 4
 DEFAULT_OBJECTIVE_MERGE_GAP_SECONDS = 30
 DEFAULT_MAX_MOMENTUM_WINDOW_SECONDS = 180
+DEFAULT_FOCUS_PROFILE = "balanced"
+VALID_FOCUS_PROFILES = {"balanced", "lane", "objective", "roam"}
+DEFAULT_LANE_PHASE_SECONDS = 12 * 60
+DEFAULT_LANE_PHASE_WINDOWS = 3
+DEFAULT_ROAM_DISTANCE_THRESHOLD = 3500
+
+
+def _normalize_speed(speed: float) -> float:
+    return speed if speed > 0 else 1.0
+
+
+def _game_time_to_video_time(timestamp_sec: float, *, speed: float) -> float:
+    return timestamp_sec / _normalize_speed(speed)
+
+
+def _video_time_to_game_time(timestamp_sec: float, *, speed: float) -> float:
+    return timestamp_sec * _normalize_speed(speed)
 
 
 def get_video_metadata(video_path: Path) -> VideoSource:
@@ -287,6 +304,7 @@ def _momentum_candidate_timestamps(
     *,
     game_start_offset: int,
     max_count: int,
+    speed: float = 1.0,
 ) -> list[float]:
     if max_count <= 0 or not match_context:
         return []
@@ -305,8 +323,8 @@ def _momentum_candidate_timestamps(
 
     for index, (start_sec, end_sec) in enumerate(windows):
         count = max(1, base_count + (1 if index < remainder else 0))
-        window_start = game_start_offset + start_sec
-        window_end = game_start_offset + end_sec
+        window_start = game_start_offset + _game_time_to_video_time(start_sec, speed=speed)
+        window_end = game_start_offset + _game_time_to_video_time(end_sec, speed=speed)
         candidates.extend(_evenly_spaced_timestamps(window_start, window_end, count))
 
     return candidates
@@ -318,12 +336,16 @@ def _early_game_timestamps(
     game_start_offset: int,
     reserved_count: int,
     early_game_window_seconds: int,
+    speed: float = 1.0,
 ) -> list[float]:
     if reserved_count <= 0:
         return []
 
     start_sec = min(max(0, game_start_offset), duration_sec)
-    end_sec = min(duration_sec, start_sec + early_game_window_seconds)
+    end_sec = min(
+        duration_sec,
+        start_sec + _game_time_to_video_time(early_game_window_seconds, speed=speed),
+    )
     return _evenly_spaced_timestamps(start_sec, end_sec, reserved_count)
 
 
@@ -343,6 +365,8 @@ def _build_sampling_timestamps(
     focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
     focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
     global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
+    focus_profile: str | None = None,
+    speed: float = 1.0,
 ) -> list[float]:
     return _build_sampling_plan(
         duration_sec=duration_sec,
@@ -359,6 +383,8 @@ def _build_sampling_timestamps(
         focus_window_seconds=focus_window_seconds,
         focus_budget_ratio=focus_budget_ratio,
         global_backfill=global_backfill,
+        focus_profile=focus_profile,
+        speed=speed,
     )["final_timestamps_sec"]
 
 
@@ -369,6 +395,17 @@ def _resolve_sampling_strategy(
     if sampling_strategy:
         return sampling_strategy
     return "adaptive" if adaptive else "fixed"
+
+
+def _resolve_focus_profile(focus_profile: str | None) -> str:
+    if focus_profile is None:
+        return DEFAULT_FOCUS_PROFILE
+
+    normalized = focus_profile.strip().lower()
+    if normalized not in VALID_FOCUS_PROFILES:
+        valid = ", ".join(sorted(VALID_FOCUS_PROFILES))
+        raise ValueError(f"Unsupported focus profile: {focus_profile}. Choose from {valid}.")
+    return normalized
 
 
 def _make_focus_window(
@@ -487,9 +524,52 @@ def _build_focus_windows(
     match_context: dict | None,
     game_start_offset: int,
     focus_window_seconds: int,
+    focus_profile: str = DEFAULT_FOCUS_PROFILE,
+    speed: float = 1.0,
 ) -> list[dict]:
     if duration_sec <= 0 or focus_window_seconds <= 0 or not match_context:
         return []
+
+    focus_profile = _resolve_focus_profile(focus_profile)
+
+    profile_priorities = {
+        "balanced": {
+            "death": 100,
+            "kill": 75,
+            "assist": 65,
+            "objective_elite": 90,
+            "objective_building": 85,
+            "level": 60,
+            "momentum": 80,
+        },
+        "lane": {
+            "death": 70,
+            "kill": 68,
+            "assist": 58,
+            "objective_elite": 62,
+            "objective_building": 58,
+            "level": 82,
+            "momentum": 56,
+        },
+        "objective": {
+            "death": 105,
+            "kill": 80,
+            "assist": 70,
+            "objective_elite": 115,
+            "objective_building": 100,
+            "level": 55,
+            "momentum": 98,
+        },
+        "roam": {
+            "death": 65,
+            "kill": 82,
+            "assist": 100,
+            "objective_elite": 96,
+            "objective_building": 88,
+            "level": 62,
+            "momentum": 92,
+        },
+    }[focus_profile]
 
     def bounded_window(
         ts: int,
@@ -498,11 +578,12 @@ def _build_focus_windows(
         priority: int,
         event_payload: dict,
     ) -> dict | None:
-        video_ts = game_start_offset + ts
+        video_ts = game_start_offset + _game_time_to_video_time(ts, speed=speed)
         if video_ts < 0 or video_ts > duration_sec:
             return None
-        start_sec = max(0.0, float(video_ts - focus_window_seconds))
-        end_sec = min(duration_sec, float(video_ts + focus_window_seconds))
+        video_window = _game_time_to_video_time(focus_window_seconds, speed=speed)
+        start_sec = max(0.0, float(video_ts - video_window))
+        end_sec = min(duration_sec, float(video_ts + video_window))
         if end_sec <= start_sec:
             return None
         return _make_focus_window(
@@ -518,19 +599,34 @@ def _build_focus_windows(
 
     for ts in match_context.get("death_timestamps", []):
         if isinstance(ts, int):
-            window = bounded_window(ts, reason="death", priority=100, event_payload={"type": "death", "timestamp_sec": ts})
+            window = bounded_window(
+                ts,
+                reason="death",
+                priority=profile_priorities["death"],
+                event_payload={"type": "death", "timestamp_sec": ts},
+            )
             if window:
                 windows.append(window)
 
     for ts in match_context.get("kill_timestamps", []):
         if isinstance(ts, int):
-            window = bounded_window(ts, reason="kill", priority=75, event_payload={"type": "kill", "timestamp_sec": ts})
+            window = bounded_window(
+                ts,
+                reason="kill",
+                priority=profile_priorities["kill"],
+                event_payload={"type": "kill", "timestamp_sec": ts},
+            )
             if window:
                 windows.append(window)
 
     for ts in match_context.get("assist_timestamps", []):
         if isinstance(ts, int):
-            window = bounded_window(ts, reason="assist", priority=65, event_payload={"type": "assist", "timestamp_sec": ts})
+            window = bounded_window(
+                ts,
+                reason="assist",
+                priority=profile_priorities["assist"],
+                event_payload={"type": "assist", "timestamp_sec": ts},
+            )
             if window:
                 windows.append(window)
 
@@ -538,7 +634,11 @@ def _build_focus_windows(
         ts = event.get("timestamp")
         if isinstance(ts, int):
             event_type = event.get("type", "objective")
-            priority = 90 if event_type == "ELITE_MONSTER_KILL" else 85
+            priority = (
+                profile_priorities["objective_elite"]
+                if event_type == "ELITE_MONSTER_KILL"
+                else profile_priorities["objective_building"]
+            )
             window = bounded_window(
                 ts,
                 reason="objective",
@@ -555,22 +655,113 @@ def _build_focus_windows(
             window = bounded_window(
                 ts,
                 reason=f"level_{level}",
-                priority=60,
+                priority=profile_priorities["level"],
                 event_payload={"type": "level_up", "timestamp_sec": ts, "level": level},
             )
             if window:
                 windows.append(window)
 
+    if focus_profile == "lane":
+        lane_start = max(0.0, float(game_start_offset))
+        lane_end = min(
+            duration_sec,
+            lane_start + _game_time_to_video_time(DEFAULT_LANE_PHASE_SECONDS, speed=speed),
+        )
+        if lane_end - lane_start >= 90:
+            span = lane_end - lane_start
+            segment_count = min(
+                DEFAULT_LANE_PHASE_WINDOWS,
+                max(
+                    1,
+                    int(math.ceil(
+                        span / max(
+                            _game_time_to_video_time(180.0, speed=speed),
+                            _game_time_to_video_time(focus_window_seconds * 2, speed=speed),
+                        )
+                    )),
+                ),
+            )
+            step = span / segment_count
+            for index in range(segment_count):
+                segment_start = lane_start + (step * index)
+                segment_end = lane_end if index == segment_count - 1 else segment_start + step
+                windows.append(
+                    _make_focus_window(
+                        window_id=f"lane_phase_{index}",
+                        reason="lane",
+                        priority=110 - (index * 4),
+                        start_sec=segment_start,
+                        end_sec=segment_end,
+                        source_events=[{
+                            "type": "lane_phase",
+                            "start_sec": max(0, int(round(segment_start - game_start_offset))),
+                            "end_sec": max(0, int(round(segment_end - game_start_offset))),
+                        }],
+                    )
+                )
+
+        for item in match_context.get("item_purchases", []):
+            ts = item.get("timestamp")
+            if isinstance(ts, int) and 0 <= ts <= DEFAULT_LANE_PHASE_SECONDS:
+                window = bounded_window(
+                    ts,
+                    reason="lane_reset",
+                    priority=90,
+                    event_payload={
+                        "type": "item_purchase",
+                        "timestamp_sec": ts,
+                        "item_name": item.get("item_name"),
+                    },
+                )
+                if window:
+                    windows.append(window)
+
+    if focus_profile == "roam":
+        positions = match_context.get("position_timeline", [])
+        previous_frame: dict | None = None
+        for frame in positions:
+            ts = frame.get("timestamp")
+            x = frame.get("x")
+            y = frame.get("y")
+            if not all(isinstance(value, int) for value in (ts, x, y)):
+                continue
+            if previous_frame is not None:
+                prev_ts = previous_frame["timestamp"]
+                distance = math.dist(
+                    (float(previous_frame["x"]), float(previous_frame["y"])),
+                    (float(x), float(y)),
+                )
+                if 360 <= ts <= 1320 and 0 < ts - prev_ts <= 180 and distance >= DEFAULT_ROAM_DISTANCE_THRESHOLD:
+                    window = bounded_window(
+                        ts,
+                        reason="roam",
+                        priority=95,
+                        event_payload={
+                            "type": "position_transition",
+                            "timestamp_sec": ts,
+                            "distance": round(distance, 1),
+                        },
+                    )
+                    if window:
+                        windows.append(window)
+            previous_frame = frame
+
     for index, (start_sec, end_sec) in enumerate(important_time_windows(match_context)):
-        video_start = max(0.0, float(game_start_offset + start_sec))
-        video_end = min(duration_sec, float(game_start_offset + end_sec))
+        video_start = max(
+            0.0,
+            float(game_start_offset + _game_time_to_video_time(start_sec, speed=speed)),
+        )
+        video_end = min(
+            duration_sec,
+            float(game_start_offset + _game_time_to_video_time(end_sec, speed=speed)),
+        )
         if video_end <= video_start:
             continue
         windows.append(
             _make_focus_window(
                 window_id=f"momentum_{index}",
                 reason="momentum",
-                priority=80,
+                priority=profile_priorities["momentum"],
                 start_sec=video_start,
                 end_sec=video_end,
                 source_events=[{"type": "momentum", "start_sec": start_sec, "end_sec": end_sec}],
@@ -641,10 +832,14 @@ def _build_focused_sampling_report(
     focus_budget_ratio: float,
     global_backfill: int,
     game_start_offset: int,
+    focus_profile: str = DEFAULT_FOCUS_PROFILE,
 ) -> dict:
+    focus_profile = _resolve_focus_profile(focus_profile)
+
     if duration_sec <= 0 or max_screenshots <= 0:
         return {
             "strategy": "focused",
+            "focus_profile": focus_profile,
             "video_duration_sec": duration_sec,
             "max_screenshots": max_screenshots,
             "focus_budget": 0,
@@ -662,6 +857,7 @@ def _build_focused_sampling_report(
         )
         return {
             "strategy": "focused",
+            "focus_profile": focus_profile,
             "video_duration_sec": duration_sec,
             "max_screenshots": max_screenshots,
             "focus_budget": 0,
@@ -744,6 +940,7 @@ def _build_focused_sampling_report(
 
     return {
         "strategy": "focused",
+        "focus_profile": focus_profile,
         "video_duration_sec": duration_sec,
         "max_screenshots": max_screenshots,
         "focus_budget": focus_budget,
@@ -773,6 +970,8 @@ def _build_sampling_plan(
     focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
     focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
     global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
+    focus_profile: str | None = None,
+    speed: float = 1.0,
 ) -> dict:
     if duration_sec <= 0 or max_screenshots <= 0:
         return {
@@ -783,11 +982,14 @@ def _build_sampling_plan(
         }
 
     if sampling_strategy == "focused":
+        resolved_focus_profile = _resolve_focus_profile(focus_profile)
         windows = _build_focus_windows(
             duration_sec=duration_sec,
             match_context=match_context,
             game_start_offset=game_start_offset,
             focus_window_seconds=focus_window_seconds,
+            focus_profile=resolved_focus_profile,
+            speed=speed,
         )
         return _build_focused_sampling_report(
             duration_sec=duration_sec,
@@ -796,6 +998,7 @@ def _build_sampling_plan(
             focus_budget_ratio=focus_budget_ratio,
             global_backfill=global_backfill,
             game_start_offset=game_start_offset,
+            focus_profile=resolved_focus_profile,
         )
 
     has_gameplay_context = match_context is not None or game_start_offset > 0
@@ -811,11 +1014,13 @@ def _build_sampling_plan(
         game_start_offset=game_start_offset,
         reserved_count=early_budget,
         early_game_window_seconds=early_game_window_seconds,
+        speed=speed,
     )
     momentum_candidates = _momentum_candidate_timestamps(
         match_context,
         game_start_offset=game_start_offset,
         max_count=momentum_budget,
+        speed=speed,
     )
 
     remaining = max_screenshots - len(
@@ -829,7 +1034,7 @@ def _build_sampling_plan(
     if adaptive and activity_profile:
         adaptive_candidates = _adaptive_timestamps(
             activity_profile,
-            float(interval_seconds),
+            _game_time_to_video_time(float(interval_seconds), speed=speed),
             max(max_screenshots, remaining),
         )
         backfill_candidates = [
@@ -838,7 +1043,7 @@ def _build_sampling_plan(
     else:
         backfill_candidates = _fixed_interval_timestamps(
             duration_sec,
-            interval_seconds,
+            max(1, int(round(_game_time_to_video_time(interval_seconds, speed=speed)))),
             start_sec=max(0, game_start_offset),
         )
 
@@ -871,6 +1076,8 @@ def plan_screenshot_sampling(
     focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
     focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
     global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
+    focus_profile: str | None = None,
+    speed: float = 1.0,
 ) -> dict:
     import cv2
 
@@ -916,6 +1123,8 @@ def plan_screenshot_sampling(
         focus_window_seconds=focus_window_seconds,
         focus_budget_ratio=focus_budget_ratio,
         global_backfill=global_backfill,
+        focus_profile=focus_profile,
+        speed=speed,
     )
 
 
@@ -933,6 +1142,7 @@ def extract_screenshots(
     focus_window_seconds: int = DEFAULT_FOCUS_WINDOW_SECONDS,
     focus_budget_ratio: float = DEFAULT_FOCUS_BUDGET_RATIO,
     global_backfill: int = DEFAULT_GLOBAL_BACKFILL,
+    focus_profile: str | None = None,
     planned_timestamps: list[float] | None = None,
 ) -> list[SceneSnapshot]:
     """Extract screenshots from video using OpenCV.
@@ -985,6 +1195,8 @@ def extract_screenshots(
             focus_window_seconds=focus_window_seconds,
             focus_budget_ratio=focus_budget_ratio,
             global_backfill=global_backfill,
+            focus_profile=focus_profile,
+            speed=speed,
         )
     else:
         sample_timestamps = planned_timestamps

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from lol_vod_analyzer.local_video import (
+    _build_sampling_plan,
     _adaptive_timestamps,
     _compress_focus_windows,
     _build_focus_windows,
@@ -168,6 +169,25 @@ class TestBuildSamplingTimestamps:
         assert any(845 <= ts <= 945 for ts in timestamps)
         assert timestamps == sorted(timestamps)
 
+    def test_speed_scales_focused_timestamps_to_video_time(self):
+        timestamps = _build_sampling_timestamps(
+            duration_sec=1200,
+            interval_seconds=10,
+            max_screenshots=8,
+            adaptive=False,
+            sampling_strategy="focused",
+            speed=2.0,
+            match_context={
+                "death_timestamps": [400],
+                "objective_events": [{"timestamp": 900, "type": "ELITE_MONSTER_KILL"}],
+                "gold_diff_timeline": [0] * 4 + [2000] * 3 + [0] * 20,
+            },
+            global_backfill=2,
+        )
+
+        assert any(155 <= ts <= 245 for ts in timestamps)
+        assert any(405 <= ts <= 495 for ts in timestamps)
+
 
 class TestFocusedSampling:
     def test_build_focus_windows_includes_key_reasons(self):
@@ -190,6 +210,42 @@ class TestFocusedSampling:
         assert "objective" in reasons
         assert "momentum" in reasons
         assert "level_6" in reasons
+
+    def test_lane_profile_adds_lane_focus_windows(self):
+        windows = _build_focus_windows(
+            duration_sec=1800,
+            match_context={
+                "death_timestamps": [400],
+                "item_purchases": [{"timestamp": 210, "item_name": "Boots"}],
+                "gold_diff_timeline": [0] * 4 + [2000] * 3 + [0] * 20,
+            },
+            game_start_offset=0,
+            focus_window_seconds=45,
+            focus_profile="lane",
+        )
+
+        reasons = {reason for window in windows for reason in window["reasons"]}
+        assert "lane" in reasons
+        assert "lane_reset" in reasons
+
+    def test_roam_profile_adds_movement_windows(self):
+        windows = _build_focus_windows(
+            duration_sec=1800,
+            match_context={
+                "assist_timestamps": [600],
+                "position_timeline": [
+                    {"timestamp": 420, "x": 1200, "y": 1300},
+                    {"timestamp": 540, "x": 7000, "y": 7600},
+                ],
+                "gold_diff_timeline": [0] * 30,
+            },
+            game_start_offset=0,
+            focus_window_seconds=45,
+            focus_profile="roam",
+        )
+
+        reasons = {reason for window in windows for reason in window["reasons"]}
+        assert "roam" in reasons
 
     def test_compress_focus_windows_merges_nearby_objectives(self):
         windows = _compress_focus_windows([
@@ -292,3 +348,77 @@ class TestFocusedSampling:
         assert report["backfill_budget"] >= 2
         assert report["backfill"]["allocated_count"] >= 2
         assert all(window["allocated_count"] >= 2 for window in report["focus_windows"])
+
+    def test_focused_sampling_report_includes_profile(self):
+        report = _build_focused_sampling_report(
+            duration_sec=1800,
+            max_screenshots=6,
+            windows=[],
+            focus_budget_ratio=0.75,
+            global_backfill=2,
+            game_start_offset=0,
+            focus_profile="lane",
+        )
+
+        assert report["strategy"] == "focused"
+        assert report["focus_profile"] == "lane"
+
+    def test_lane_profile_increases_early_density_over_balanced(self):
+        match_context = {
+            "death_timestamps": [980],
+            "assist_timestamps": [860],
+            "objective_events": [
+                {"timestamp": 900, "type": "ELITE_MONSTER_KILL"},
+                {"timestamp": 1260, "type": "BUILDING_KILL"},
+            ],
+            "item_purchases": [{"timestamp": 240, "item_name": "Boots"}],
+            "level_ups": [{"timestamp": 360, "level": 6}],
+            "gold_diff_timeline": [0] * 10 + [2000] * 3 + [0] * 8 + [2500] * 4,
+        }
+        balanced = _build_sampling_plan(
+            duration_sec=1800,
+            interval_seconds=10,
+            max_screenshots=12,
+            adaptive=False,
+            match_context=match_context,
+            sampling_strategy="focused",
+            focus_profile="balanced",
+            global_backfill=2,
+        )
+        lane = _build_sampling_plan(
+            duration_sec=1800,
+            interval_seconds=10,
+            max_screenshots=12,
+            adaptive=False,
+            match_context=match_context,
+            sampling_strategy="focused",
+            focus_profile="lane",
+            global_backfill=2,
+        )
+
+        balanced_early = sum(ts <= 720 for ts in balanced["final_timestamps_sec"])
+        lane_early = sum(ts <= 720 for ts in lane["final_timestamps_sec"])
+
+        assert lane["focus_profile"] == "lane"
+        assert any(window["reason"] == "lane" for window in lane["focus_windows"])
+        assert lane_early > balanced_early
+
+    def test_speed_scales_lane_windows_for_fast_replays(self):
+        lane = _build_sampling_plan(
+            duration_sec=1200,
+            interval_seconds=10,
+            max_screenshots=12,
+            adaptive=False,
+            match_context={
+                "item_purchases": [{"timestamp": 240, "item_name": "Boots"}],
+                "gold_diff_timeline": [0] * 20,
+            },
+            sampling_strategy="focused",
+            focus_profile="lane",
+            speed=2.0,
+            global_backfill=2,
+        )
+
+        lane_windows = [w for w in lane["focus_windows"] if w["reason"] == "lane"]
+        assert lane_windows
+        assert lane_windows[0]["end_sec"] <= 120.0

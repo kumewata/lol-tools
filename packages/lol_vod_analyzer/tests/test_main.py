@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -85,6 +86,7 @@ class TestAnalyzeLocalDryRun:
         )
         mock_plan_screenshot_sampling.return_value = {
             "strategy": "focused",
+            "focus_profile": "lane",
             "final_timestamps_sec": [30.0, 60.0],
             "focus_windows": [],
             "backfill": {"allocated_count": 2, "selected_timestamps_sec": [30.0, 60.0]},
@@ -99,9 +101,16 @@ class TestAnalyzeLocalDryRun:
             dry_run_sampling=True,
             dump_sampling_report=report_path,
             sampling_strategy="focused",
+            focus_profile="lane",
+            speed=2.0,
         )
+
+        saved = json.loads(report_path.read_text(encoding="utf-8"))
 
         assert report_path.exists()
         mock_plan_screenshot_sampling.assert_called_once()
+        assert mock_plan_screenshot_sampling.call_args.kwargs["focus_profile"] == "lane"
+        assert mock_plan_screenshot_sampling.call_args.kwargs["speed"] == 2.0
+        assert saved["focus_profile"] == "lane"
         mock_extract_screenshots.assert_not_called()
         mock_analyze_video.assert_not_awaited()
