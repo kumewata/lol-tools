@@ -20,9 +20,7 @@ def current_platform_family() -> str:
 
 def required_local_video_tools(mode: str | None) -> list[str]:
     """Return required external tools for local video analysis."""
-    if mode == "gameplay":
-        return ["ffprobe"]
-    return ["ffprobe", "ffmpeg"]
+    return ["ffprobe"]
 
 
 def missing_tools(tools: list[str]) -> list[str]:

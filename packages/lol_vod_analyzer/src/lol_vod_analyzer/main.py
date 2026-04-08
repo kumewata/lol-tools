@@ -26,11 +26,9 @@ from lol_vod_analyzer.fetcher import (
 )
 from lol_vod_analyzer.local_video import (
     VALID_FOCUS_PROFILES,
-    extract_audio,
     extract_screenshots,
     get_video_metadata,
     plan_screenshot_sampling,
-    transcribe_audio,
 )
 from lol_vod_analyzer.models import SceneSnapshot, VideoSource
 from lol_vod_analyzer.report import generate_report
@@ -133,7 +131,7 @@ def _select_report_snapshots(
 def analyze(
     source: str = typer.Argument(help="YouTube URL or local video file path"),
     mode: Optional[str] = typer.Option(
-        None, help="Analysis mode: commentary or gameplay (auto-detected if omitted)"
+        None, help="Analysis mode: commentary or gameplay"
     ),
     no_open: bool = typer.Option(False, "--no-open", help="Don't open report in browser"),
     lang: str = typer.Option("ja", help="Subtitle language code"),
@@ -448,6 +446,14 @@ async def _analyze_local(
     game_start_offset: int = 0,
 ) -> None:
     """Analyze a local video file."""
+    if mode == "commentary":
+        console.print(
+            "[red]Error:[/] ローカル動画の commentary モードはサポートしていません。\n"
+            "YouTube URL を直接解析するか、ローカル動画は `--mode gameplay` で実行してください。"
+        )
+        raise typer.Exit(1)
+
+    mode = mode or "gameplay"
     needed_tools = required_local_video_tools(mode)
     missing = missing_tools(needed_tools)
     if missing:
@@ -517,24 +523,7 @@ async def _analyze_local(
                 return
 
             transcript: list = []
-            if mode != "gameplay":
-                progress.update(task, description="音声を抽出中...")
-                audio_dir = PACKAGE_ROOT / "output" / "audio"
-                try:
-                    audio_path = extract_audio(video_path, audio_dir)
-                except RuntimeError as exc:
-                    console.print(f"[red]Error:[/] {exc}")
-                    raise typer.Exit(1) from exc
-
-                if audio_path is not None:
-                    console.print(f"[green]音声抽出:[/] {audio_path.name}")
-                    progress.update(task, description="音声を文字起こし中（Gemini）...")
-                    transcript = transcribe_audio(audio_path, api_key=api_key)
-                    console.print(f"[green]字幕セグメント:[/] {len(transcript)}件")
-                else:
-                    console.print("[yellow]音声トラックなし[/]")
-            else:
-                console.print("[dim]gameplay モード — 音声文字起こしをスキップ（ゲームSEはノイズのため）[/]")
+            console.print("[dim]ローカル動画は gameplay モードで解析します[/]")
 
             progress.update(task, description="スクリーンショットを抽出中...")
             snapshots = extract_screenshots(
@@ -555,8 +544,6 @@ async def _analyze_local(
             )
             console.print(f"[green]スクリーンショット:[/] {len(snapshots)}枚")
 
-            if mode is None:
-                mode = "gameplay" if len(transcript) < 10 else "commentary"
             console.print(f"[green]分析モード:[/] {mode}")
 
             if game_start_offset:

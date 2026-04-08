@@ -13,9 +13,8 @@ from lol_vod_analyzer.local_video import (
     _build_focused_sampling_report,
     _build_sampling_timestamps,
     _compute_scene_activity,
-    get_video_metadata,
-    extract_audio,
     extract_screenshots,
+    get_video_metadata,
 )
 
 
@@ -39,26 +38,6 @@ class TestGetVideoMetadata:
             get_video_metadata(Path("/tmp/test.mp4"))
 
         assert "ffprobe" in str(excinfo.value)
-        mock_run.assert_called_once()
-
-
-class TestExtractAudio:
-    @patch("lol_vod_analyzer.local_video.subprocess.run")
-    def test_extract_audio(self, mock_run, tmp_path):
-        mock_run.return_value = MagicMock(returncode=0)
-        audio_path = extract_audio(Path("/tmp/test.mp4"), tmp_path)
-        assert audio_path == tmp_path / "test.m4a"
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
-        assert args[0] == "ffmpeg"
-        assert "-vn" in args
-
-    @patch("lol_vod_analyzer.local_video.subprocess.run", side_effect=FileNotFoundError)
-    def test_extract_audio_missing_ffmpeg(self, mock_run, tmp_path):
-        with pytest.raises(RuntimeError) as excinfo:
-            extract_audio(Path("/tmp/test.mp4"), tmp_path)
-
-        assert "ffmpeg" in str(excinfo.value)
         mock_run.assert_called_once()
 
 
