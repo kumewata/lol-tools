@@ -133,6 +133,8 @@ uv run lol-tools review --count 1 --no-open
 uv run lol-tools vod analyze 'https://youtube.com/watch?v=...' --mode commentary
 ```
 
+`commentary` は YouTube 字幕を前提とする。ローカル動画の `commentary` モードは現在サポートしていない。
+
 #### プレイ動画分析
 
 標準ワークフローは、自分の試合を録画した動画を対象にする使い方。
@@ -310,6 +312,8 @@ uv run pytest
   自分の試合録画を対象にした標準フロー
 - 他人のリプレイ動画分析: `vod analyze <YouTube URL or 動画パス> --mode gameplay` 。
   試合データと紐付けにくいため実験的機能
+
+`commentary` は YouTube 向け、ローカル動画は `gameplay` 向けという境界で使い分ける。
 
 ### リポジトリ構成
 

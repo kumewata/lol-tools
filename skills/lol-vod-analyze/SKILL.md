@@ -12,7 +12,7 @@ LoL の解説動画・コーチング動画・プレイ動画を AI で分析し
 - ツールは `packages/lol_vod_analyzer/` にある
 - 通常はルートの `.env` に `GOOGLE_API_KEY` が設定済みであること
 - YouTube 動画は字幕（自動生成含む）とストーリーボード画像、またはダウンロードした動画から分析する
-- ローカル動画ファイルも入力できる
+- ローカル動画ファイルも入力できる（gameplay モードのみ）
 - `--match-data` を使うと `lol-review` の試合データと結合できる
 - `--adaptive` で動きの多い場面のスクリーンショット密度を自動調整できる
 - `--sampling-strategy focused` を使うと、match-data を元に重要局面へ screenshot 予算を寄せられる
@@ -28,9 +28,9 @@ LoL の解説動画・コーチング動画・プレイ動画を AI で分析し
    - ローカル動画ファイルパス
    - 長尺ローカル動画なら、まず proxy を作るかどうか判断する
 2. 分析モードを判断する
-   - **commentary** — 解説・コーチング動画向け（字幕テキスト重視）
+   - **commentary** — 解説・コーチング動画向け（YouTube 字幕テキスト重視）
    - **gameplay** — プレイ動画向け（画像重視）
-   - モード指定がない場合、CLI 側で自動判定またはデフォルトに任せてよい
+   - ローカル動画は `gameplay` のみ対応
 3. 必要なら試合データ連携の有無を確認する
    - `vod analyze --match-data` に渡す JSON は単一試合である必要がある
    - 直前の `latest_findings.json` をそのまま使うのではなく、必要なら `lol-tools export-match-data --match-index <N>` を挟む
@@ -122,6 +122,7 @@ HTMLの中に以下のセクションがある:
 ## トラブルシューティング
 
 - **字幕が取得できない場合** — YouTube 字幕が無い可能性がある。`--download --mode gameplay` かローカル動画分析に切り替える
+- **ローカル commentary を使いたい場合** — 現状は非対応。YouTube URL を直接渡して字幕分析を使う
 - **GOOGLE_API_KEY エラー** — まずルートの `.env` に API キーが設定されているか確認
 - **match-data エラー** — JSON パスが存在するか確認し、複数試合入りの `latest_findings.json` をそのまま渡していないか確認する。必要なら `lol-tools export-match-data --match-index <N>` を使う
 - **長尺 VOD のコストが重い** — proxy 動画を作り、先に `--dry-run-sampling` で allocation だけ確認する

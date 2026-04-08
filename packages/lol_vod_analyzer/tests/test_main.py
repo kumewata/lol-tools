@@ -2,6 +2,7 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import typer
 
 from lol_vod_analyzer.main import _analyze_local, _build_match_context
 from lol_vod_analyzer.models import VideoSource
@@ -114,3 +115,18 @@ class TestAnalyzeLocalDryRun:
         assert saved["focus_profile"] == "lane"
         mock_extract_screenshots.assert_not_called()
         mock_analyze_video.assert_not_awaited()
+
+
+class TestAnalyzeLocalModeValidation:
+    @pytest.mark.asyncio
+    async def test_rejects_commentary_mode_for_local_video(self, tmp_path):
+        video_path = tmp_path / "video.mp4"
+        video_path.write_bytes(b"fake")
+
+        with pytest.raises(typer.Exit):
+            await _analyze_local(
+                video_path=video_path,
+                mode="commentary",
+                open_browser=False,
+                api_key="test-key",
+            )

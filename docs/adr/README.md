@@ -26,3 +26,6 @@ tags: [ADR, アーキテクチャ, インデックス]
 | [ADR-013](ADR-013-game-start-offset.md) | 動画上の試合開始オフセットによるタイムライン同期 | lol_vod_analyzer | Accepted |
 | [ADR-014](ADR-014-weighted-screenshot-selection.md) | 重要シーン優先のスクリーンショット選定 | lol_vod_analyzer | Accepted |
 | [ADR-015](ADR-015-focused-sampling-for-long-vod-analysis.md) | 長尺 VOD 向け focused sampling と dry-run 検証基盤 | lol_vod_analyzer | Accepted |
+
+注記:
+- 一部の ADR は採択後に機能削除や運用変更の追記が入っている。特に `lol_vod_analyzer` 関連は各 ADR の「追記」を合わせて確認すること。
