@@ -44,14 +44,9 @@ y 軸はカテゴリ、点の色は severity（critical=赤 / warning=橙 / info
   y="category"
   series="severity"
   seriesColors={{"critical": "#ef4444", "warning": "#f59e0b", "info": "#3b82f6"}}
-  pointSize=80
-  tooltip={[
-    {id: 'generated_at', title: 'スナップショット'},
-    {id: 'category', title: 'カテゴリ'},
-    {id: 'severity', title: 'Severity'},
-    {id: 'message', title: 'メッセージ'},
-    {id: 'detail', title: '詳細'}
-  ]}
+  tooltipTitle="所見"
+  yAxisTitle="カテゴリ"
+  xAxisTitle="スナップショット"
 />
 
 ## 所見一覧

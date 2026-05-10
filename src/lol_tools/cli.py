@@ -20,8 +20,15 @@ from lol_vod_analyzer.system_tools import install_hint
 
 try:
     from lol_dashboard.cli import app as dashboard_app
-except ImportError:
-    dashboard_app = None
+except ModuleNotFoundError as e:
+    # Only swallow when the lol_dashboard package itself isn't installed.
+    # Sub-module errors (e.g., lol_dashboard.cli importing a missing sibling)
+    # or missing third-party deps (e.g., duckdb) should bubble up so that
+    # real bugs are not silently hidden behind an "optional dashboard" facade.
+    if e.name == "lol_dashboard":
+        dashboard_app = None
+    else:
+        raise
 
 # Repo root = src/lol_tools/cli.py -> src/lol_tools -> src -> lol-tools/
 REPO_ROOT = Path(__file__).parent.parent.parent

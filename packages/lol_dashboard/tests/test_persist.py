@@ -189,49 +189,115 @@ def test_backfill_multi_summoner(tmp_path: Path) -> None:
 
 
 def test_backfill_dedupes_by_snapshot_and_summoner(tmp_path: Path) -> None:
-    """Same snapshot_id with different summoners should both load (PK is the pair)."""
+    """Within ONE backfill run: same snapshot_id × different summoners must both load.
+
+    Regression for previous behavior where backfill deduplicated only by snapshot_id,
+    silently dropping the second summoner. We mock load_snapshot to force the same
+    snapshot_id from two different files (since snapshot_id is normally derived from
+    the filename, identical IDs from identical filenames is impossible on disk).
+    """
     db = tmp_path / "lol.duckdb"
     output = tmp_path / "output"
     output.mkdir()
-    # Same snapshot_id "20260501_120000" but different summoners → different filenames needed
-    # Real lol_review writes one summoner per file, so we simulate by using subdirectories
-    # to bypass identical filenames.
-    sub_a = output / "alice"
-    sub_b = output / "bob"
-    sub_a.mkdir()
-    sub_b.mkdir()
-    _write_findings(sub_a, "20260501_120000", summoner="alice#1234")
-    _write_findings(sub_b, "20260501_120000", summoner="bob#5678")
+    # 2 files exist (with unique names — disk-level requirement)
+    (output / "findings_20260501_120000.json").write_text("{}")
+    (output / "findings_20260501_120001.json").write_text("{}")
 
-    # Run backfill against each subdir
-    backfill(db, sub_a)
-    backfill(db, sub_b)
+    snap_id = "20260501_120000"
+    payloads = [
+        SnapshotPayload(
+            snapshot_id=snap_id, summoner="alice#1234", generated_at=snap_id,
+            total_games=1, wins=1, losses=0, win_rate=1.0, avg_kda=3.0, avg_cs_per_min=2.0,
+            matches=[], findings=[], champion_stats=[],
+        ),
+        SnapshotPayload(
+            snapshot_id=snap_id, summoner="bob#5678", generated_at=snap_id,
+            total_games=1, wins=1, losses=0, win_rate=1.0, avg_kda=3.0, avg_cs_per_min=2.0,
+            matches=[], findings=[], champion_stats=[],
+        ),
+    ]
+    with patch("lol_dashboard.persist.load_snapshot", side_effect=payloads):
+        backfill(db, output)
 
     con = init_db(db)
-    rows = con.execute("SELECT snapshot_id, summoner FROM snapshots ORDER BY summoner").fetchall()
-    assert rows == [("20260501_120000", "alice#1234"), ("20260501_120000", "bob#5678")]
+    rows = con.execute(
+        "SELECT snapshot_id, summoner FROM snapshots ORDER BY summoner"
+    ).fetchall()
+    assert rows == [(snap_id, "alice#1234"), (snap_id, "bob#5678")], (
+        "Both summoners must load even when snapshot_id collides "
+        "(regression for prior single-key dedupe bug)."
+    )
     con.close()
 
 
+def test_backfill_dedupes_within_run_on_full_pk(tmp_path: Path) -> None:
+    """Within ONE backfill run: identical (snapshot_id, summoner) must dedupe.
+
+    Verifies the seen_keys set actually fires when the SAME pair appears twice
+    in a single run.
+    """
+    from lol_dashboard.persist import upsert_snapshot
+    db = tmp_path / "lol.duckdb"
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "findings_20260501_120000.json").write_text("{}")
+    (output / "findings_20260501_120001.json").write_text("{}")
+
+    snap_id = "20260501_120000"
+    same_payload = SnapshotPayload(
+        snapshot_id=snap_id, summoner="alice#1234", generated_at=snap_id,
+        total_games=1, wins=1, losses=0, win_rate=1.0, avg_kda=3.0, avg_cs_per_min=2.0,
+        matches=[], findings=[], champion_stats=[],
+    )
+
+    upsert_calls: list[str] = []
+    real_upsert = upsert_snapshot
+
+    def counting_upsert(con, payload):
+        upsert_calls.append(payload.snapshot_id)
+        return real_upsert(con, payload)
+
+    with patch("lol_dashboard.persist.load_snapshot", side_effect=[same_payload, same_payload]), \
+         patch("lol_dashboard.persist.upsert_snapshot", side_effect=counting_upsert):
+        backfill(db, output)
+
+    assert len(upsert_calls) == 1, "Second occurrence of same (snapshot_id, summoner) must be skipped"
+
+
 def test_upsert_rollback_on_failure(tmp_path: Path) -> None:
-    """If a later INSERT fails, prior DELETE should be rolled back."""
+    """If an INSERT fails after DELETEs, the entire upsert must roll back.
+
+    This exercises the real ordering: DELETE old rows → INSERT snapshots →
+    INSERT matches → ... and then forces a failure during a mid-upsert INSERT
+    by feeding an oversized integer that violates DuckDB INTEGER bounds.
+    """
     from lol_dashboard.persist import upsert_snapshot
     con = init_db(tmp_path / "test.duckdb")
 
-    # Seed an existing snapshot
-    upsert_snapshot(con, _make_payload(snapshot_id="20260501_120000", summoner="alice#1234"))
-    initial = con.execute("SELECT COUNT(*) FROM matches WHERE snapshot_id = '20260501_120000'").fetchone()[0]
-    assert initial == 1
+    sid = "20260501_120000"
+    summ = "alice#1234"
 
-    # Force a failure: corrupt the payload by patching to raise during inner insert
-    bad_payload = _make_payload(snapshot_id="20260501_120000", summoner="alice#1234")
-    with patch("lol_dashboard.persist._upsert_snapshot_inner", side_effect=RuntimeError("boom")):
-        with pytest.raises(RuntimeError):
-            upsert_snapshot(con, bad_payload)
+    # Seed an existing valid snapshot
+    upsert_snapshot(con, _make_payload(snapshot_id=sid, summoner=summ))
+    seeded = con.execute(
+        "SELECT champion FROM matches WHERE snapshot_id = ? AND summoner = ?", [sid, summ]
+    ).fetchone()
+    assert seeded == ("Zyra",)
 
-    # After rollback, prior data should still be intact
-    after = con.execute("SELECT COUNT(*) FROM matches WHERE snapshot_id = '20260501_120000'").fetchone()[0]
-    assert after == 1
+    # Now attempt an upsert whose match record has an out-of-range int that DuckDB
+    # will reject during INSERT. This must trigger the rollback path.
+    bad = _make_payload(snapshot_id=sid, summoner=summ)
+    bad.matches[0].champion = "BrokenChamp"
+    bad.matches[0].kills = 2**40  # exceeds INTEGER (32-bit)
+
+    with pytest.raises(Exception):  # noqa: BLE001 — DuckDB raises ConversionException
+        upsert_snapshot(con, bad)
+
+    # After rollback the original Zyra row must still be present (DELETE was undone)
+    after = con.execute(
+        "SELECT champion FROM matches WHERE snapshot_id = ? AND summoner = ?", [sid, summ]
+    ).fetchone()
+    assert after == ("Zyra",), "DELETE must be rolled back when subsequent INSERT fails"
     con.close()
 
 
