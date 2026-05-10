@@ -189,6 +189,31 @@ def test_invalid_frontmatter_raises_on_load(tmp_path, monkeypatch):
         store.load_plan(bad)
 
 
+def test_yaml_implicit_scalar_types_are_coerced(tmp_path, monkeypatch):
+    """YAML が date/int として読んだ frontmatter も Plan では文字列に戻す。"""
+    from lol_practice import store
+
+    monkeypatch.setattr(store, "_PLANS_DIR", tmp_path)
+    path = tmp_path / "2026-05-10.md"
+    path.write_text(
+        """---
+date: 2026-05-10
+generated_at: 2026-05-10T13:57:42+09:00
+based_on_snapshot: 20260510135640
+target_summoner: apililili#3197
+status: active
+---
+
+# 2026-05-10 練習プラン
+""",
+        encoding="utf-8",
+    )
+
+    loaded = store.load_plan(path)
+    assert loaded.date == "2026-05-10"
+    assert loaded.based_on_snapshot == "20260510135640"
+
+
 def test_user_note_round_trip(tmp_path, monkeypatch, sample_plan):
     """user_note に書いた内容も round-trip する。"""
     from lol_practice import store

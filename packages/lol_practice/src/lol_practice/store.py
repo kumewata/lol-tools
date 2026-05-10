@@ -60,13 +60,19 @@ def from_markdown(text: str) -> Plan:
     fm = frontmatter.loads(text)
     items = _parse_items(fm.content)
     return Plan(
-        date=fm["date"],
+        date=_coerce_string(fm["date"]),
         generated_at=_coerce_datetime(fm["generated_at"]),
-        based_on_snapshot=fm["based_on_snapshot"],
-        target_summoner=fm["target_summoner"],
-        status=fm["status"],
+        based_on_snapshot=_coerce_string(fm["based_on_snapshot"]),
+        target_summoner=_coerce_string(fm["target_summoner"]),
+        status=_coerce_string(fm["status"]),
         items=items,
     )
+
+
+def _coerce_string(value: object) -> str:
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
 
 
 def _coerce_datetime(value: object) -> datetime:
