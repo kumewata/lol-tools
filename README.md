@@ -256,8 +256,11 @@ uv run lol-tools vod analyze path/to/replay.proxy.mp4 \
 
 - Node.js 18+ / 20 / 22（Evidence.dev 公式サポート）
 - npm
+- `.env` の `DEFAULT_RIOT_ID`（ダッシュボードの表示対象サモナー）
 
 リポジトリ直下の `.mise.toml` で Node 22 を pin している。`mise` 利用者は `mise install` で揃う。
+表示対象は `.env` の `DEFAULT_RIOT_ID` から自動的に決まり、`lol-tools dashboard` 系コマンドが
+`evidence/sources/lol_history/target_summoner.sql` を生成する（per-user で gitignore 対象）。
 
 ### セットアップ
 

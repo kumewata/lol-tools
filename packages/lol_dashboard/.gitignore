@@ -2,3 +2,5 @@ data/
 evidence/build/
 evidence/.evidence/
 node_modules/
+# Auto-generated from .env DEFAULT_RIOT_ID by `lol-tools dashboard` (per-user identifier).
+evidence/sources/lol_history/target_summoner.sql

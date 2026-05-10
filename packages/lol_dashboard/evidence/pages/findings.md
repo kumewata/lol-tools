@@ -2,7 +2,8 @@
 title: 所見タイムライン
 ---
 
-<!-- target_summoner: 'apililili#3197' -->
+<!-- target_summoner は .env の DEFAULT_RIOT_ID から自動生成された
+     lol_history.target_summoner テーブルから取得する -->
 
 ```sql findings_timeline
 SELECT
@@ -15,7 +16,7 @@ FROM lol_history.findings f
 JOIN lol_history.snapshots s
   ON f.snapshot_id = s.snapshot_id
  AND f.summoner    = s.summoner
-WHERE s.summoner = 'apililili#3197'
+WHERE s.summoner = (SELECT summoner FROM lol_history.target_summoner)
 ORDER BY s.generated_at, f.severity
 ```
 
@@ -28,7 +29,7 @@ FROM lol_history.findings f
 JOIN lol_history.snapshots s
   ON f.snapshot_id = s.snapshot_id
  AND f.summoner    = s.summoner
-WHERE s.summoner = 'apililili#3197'
+WHERE s.summoner = (SELECT summoner FROM lol_history.target_summoner)
 GROUP BY f.category, f.severity
 ORDER BY occurrences DESC
 ```

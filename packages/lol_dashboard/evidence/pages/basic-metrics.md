@@ -2,7 +2,8 @@
 title: 基本指標トレンド
 ---
 
-<!-- target_summoner: 'apililili#3197' -->
+<!-- target_summoner は .env の DEFAULT_RIOT_ID から自動生成された
+     lol_history.target_summoner テーブルから取得する -->
 
 <Dropdown name=queue_filter defaultValue="ranked" title="キュー種別">
   <DropdownOption value="ranked" valueLabel="ランクのみ"/>
@@ -23,7 +24,7 @@ FROM lol_history.snapshots s
 JOIN lol_history.matches m
   ON m.snapshot_id = s.snapshot_id
  AND m.summoner    = s.summoner
-WHERE s.summoner = 'apililili#3197'
+WHERE s.summoner = (SELECT summoner FROM lol_history.target_summoner)
   AND (
       ('${inputs.queue_filter.value}' = 'ranked' AND m.is_ranked = TRUE)
    OR ('${inputs.queue_filter.value}' = 'normal' AND m.queue_category IN ('normal_draft','normal_blind'))

@@ -7,6 +7,7 @@ dependencies = [
     "duckdb>=1.0",
     "pydantic>=2.0",
     "typer[all]>=0.9",
+    "python-dotenv>=1.0",
 ]
 
 [tool.pytest.ini_options]

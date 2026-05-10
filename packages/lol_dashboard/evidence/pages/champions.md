@@ -2,7 +2,8 @@
 title: チャンピオン統計
 ---
 
-<!-- target_summoner: 'apililili#3197' -->
+<!-- target_summoner は .env の DEFAULT_RIOT_ID から自動生成された
+     lol_history.target_summoner テーブルから取得する -->
 
 <Dropdown name=queue_filter defaultValue="ranked" title="キュー種別">
   <DropdownOption value="ranked" valueLabel="ランクのみ"/>
@@ -20,7 +21,7 @@ FROM lol_history.matches m
 JOIN lol_history.snapshots s
   ON m.snapshot_id = s.snapshot_id
  AND m.summoner    = s.summoner
-WHERE s.summoner = 'apililili#3197'
+WHERE s.summoner = (SELECT summoner FROM lol_history.target_summoner)
   AND (
       ('${inputs.queue_filter.value}' = 'ranked' AND m.is_ranked = TRUE)
    OR ('${inputs.queue_filter.value}' = 'normal' AND m.queue_category IN ('normal_draft','normal_blind'))
@@ -36,7 +37,7 @@ SELECT
     m.champion,
     COUNT(*) AS games
 FROM lol_history.matches m
-WHERE m.summoner = 'apililili#3197'
+WHERE m.summoner = (SELECT summoner FROM lol_history.target_summoner)
   AND (
       ('${inputs.queue_filter.value}' = 'ranked' AND m.is_ranked = TRUE)
    OR ('${inputs.queue_filter.value}' = 'normal' AND m.queue_category IN ('normal_draft','normal_blind'))
@@ -54,7 +55,7 @@ SELECT
     COUNT(*)                                                AS games,
     ROUND(AVG(CASE WHEN m.win THEN 1.0 ELSE 0.0 END), 4)    AS win_rate_pct
 FROM lol_history.matches m
-WHERE m.summoner = 'apililili#3197'
+WHERE m.summoner = (SELECT summoner FROM lol_history.target_summoner)
   AND m.patch IS NOT NULL
   AND m.is_ranked = TRUE
 GROUP BY m.patch, m.champion

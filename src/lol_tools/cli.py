@@ -368,9 +368,15 @@ def review(
 
     if not no_persist:
         try:
-            from lol_dashboard.cli import _DB_PATH, _OUTPUT_DIR, _ensure_db_dir
+            from lol_dashboard.cli import (
+                _DB_PATH,
+                _OUTPUT_DIR,
+                _ensure_db_dir,
+                _write_target_summoner_sql,
+            )
             from lol_dashboard.persist import sync_latest
             _ensure_db_dir()
+            _write_target_summoner_sql()
             sync_latest(_DB_PATH, _OUTPUT_DIR)
         except Exception as e:
             console.print(f"[yellow]Warning:[/] dashboard sync をスキップしました: {e}")

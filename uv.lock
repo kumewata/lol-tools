@@ -405,6 +405,7 @@ source = { editable = "packages/lol_dashboard" }
 dependencies = [
     { name = "duckdb" },
     { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "typer" },
 ]
 
@@ -417,6 +418,7 @@ dev = [
 requires-dist = [
     { name = "duckdb", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "typer", extras = ["all"], specifier = ">=0.9" },
 ]
 

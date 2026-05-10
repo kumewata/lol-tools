@@ -2,7 +2,8 @@
 title: LoL 成長トレンド ダッシュボード
 ---
 
-<!-- target_summoner: 'apililili#3197' -->
+<!-- target_summoner は .env の DEFAULT_RIOT_ID から自動生成された
+     lol_history.target_summoner（1 行だけのテーブル）から取得する -->
 
 ```sql latest_snapshot
 SELECT
@@ -15,16 +16,22 @@ SELECT
     ROUND(avg_kda, 2)         AS avg_kda,
     ROUND(avg_cs_per_min, 2)  AS avg_cs_per_min
 FROM lol_history.snapshots
-WHERE summoner = 'apililili#3197'
+WHERE summoner = (SELECT summoner FROM lol_history.target_summoner)
 ORDER BY snapshot_id DESC
 LIMIT 1
 ```
 
 ```sql snapshot_count
-SELECT COUNT(*) AS cnt FROM lol_history.snapshots WHERE summoner = 'apililili#3197'
+SELECT COUNT(*) AS cnt
+FROM lol_history.snapshots
+WHERE summoner = (SELECT summoner FROM lol_history.target_summoner)
 ```
 
-## 最新スナップショット
+```sql current_summoner
+SELECT summoner FROM lol_history.target_summoner
+```
+
+## 最新スナップショット — {current_summoner[0].summoner}
 
 <BigValue
   data={latest_snapshot}
