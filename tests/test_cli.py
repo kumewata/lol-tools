@@ -124,6 +124,22 @@ def test_review_help_includes_quick_examples() -> None:
     assert "uv run lol-tools doctor" in result.output
 
 
+def test_review_help_exposes_no_persist_flag() -> None:
+    result = runner.invoke(cli.app, ["review", "--help"])
+
+    assert result.exit_code == 0
+    assert "--no-persist" in result.output
+
+
+def test_dashboard_subcommand_registered() -> None:
+    """Top-level help should list the dashboard group when lol_dashboard is installed."""
+    result = runner.invoke(cli.app, ["--help"])
+
+    assert result.exit_code == 0
+    if cli.dashboard_app is not None:
+        assert "dashboard" in result.output
+
+
 def test_vod_analyze_help_includes_quick_examples() -> None:
     result = runner.invoke(cli.app, ["vod", "analyze", "--help"])
 

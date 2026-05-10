@@ -43,7 +43,7 @@ def classify_patch(game_version: str | None) -> str | None:
     if not game_version:
         return None
     parts = game_version.split(".")
-    if len(parts) < 2:
+    if len(parts) < 2 or not (parts[0].isdigit() and parts[1].isdigit()):
         logger.warning("classify_patch: unexpected game_version format %r", game_version)
         return None
     return f"{parts[0]}.{parts[1]}"
@@ -81,6 +81,18 @@ def upsert_snapshot(con: duckdb.DuckDBPyConnection, payload: SnapshotPayload) ->
     sid = payload.snapshot_id
     summ = payload.summoner
 
+    con.execute("BEGIN TRANSACTION")
+    try:
+        _upsert_snapshot_inner(con, payload, sid, summ)
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
+def _upsert_snapshot_inner(
+    con: duckdb.DuckDBPyConnection, payload: SnapshotPayload, sid: str, summ: str
+) -> None:
     # DELETE existing data for this (snapshot_id, summoner) pair
     con.execute("DELETE FROM snapshots      WHERE snapshot_id = ? AND summoner = ?", [sid, summ])
     con.execute("DELETE FROM matches        WHERE snapshot_id = ? AND summoner = ?", [sid, summ])
@@ -161,9 +173,17 @@ def _open_db_with_retry(db_path: Path) -> duckdb.DuckDBPyConnection:
             return init_db(db_path)
         except duckdb.IOException as e:
             last_exc = e
-            logger.warning("DuckDB lock attempt %d/3 failed: %s — retrying in %ds", attempt, e, delay)
-            time.sleep(delay)
-    logger.warning("DuckDB lock could not be acquired after 3 retries: %s", last_exc)
+            if attempt < len(delays):
+                logger.warning(
+                    "DuckDB lock attempt %d/%d failed: %s — retrying in %ds",
+                    attempt, len(delays), e, delay,
+                )
+                time.sleep(delay)
+            else:
+                logger.warning(
+                    "DuckDB lock could not be acquired after %d attempts: %s",
+                    len(delays), e,
+                )
     raise last_exc  # type: ignore[misc]
 
 
@@ -174,17 +194,21 @@ def backfill(db_path: str | Path, output_dir: str | Path) -> None:
         logger.warning("backfill: no findings_*.json found in %s", output)
         return
 
-    seen_ids: set[str] = set()
+    seen_keys: set[tuple[str, str]] = set()
     con = _open_db_with_retry(Path(db_path))
     try:
         for f in files:
             payload = load_snapshot(f)
-            if payload.snapshot_id in seen_ids:
-                logger.warning("backfill: duplicate snapshot_id %r from %s — skipping", payload.snapshot_id, f.name)
+            key = (payload.snapshot_id, payload.summoner)
+            if key in seen_keys:
+                logger.warning(
+                    "backfill: duplicate (snapshot_id=%r, summoner=%r) from %s — skipping",
+                    payload.snapshot_id, payload.summoner, f.name,
+                )
                 continue
-            seen_ids.add(payload.snapshot_id)
+            seen_keys.add(key)
             upsert_snapshot(con, payload)
-            logger.info("backfill: loaded %s (snapshot_id=%s)", f.name, payload.snapshot_id)
+            logger.info("backfill: loaded %s (snapshot_id=%s, summoner=%s)", f.name, payload.snapshot_id, payload.summoner)
     finally:
         con.close()
 

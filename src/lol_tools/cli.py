@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -14,9 +15,13 @@ import typer
 from dotenv import load_dotenv
 from rich.console import Console
 
-from lol_dashboard.cli import app as dashboard_app
 from lol_vod_analyzer.main import app as vod_app
 from lol_vod_analyzer.system_tools import install_hint
+
+try:
+    from lol_dashboard.cli import app as dashboard_app
+except ImportError:
+    dashboard_app = None
 
 # Repo root = src/lol_tools/cli.py -> src/lol_tools -> src -> lol-tools/
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -34,7 +39,8 @@ replay_app = typer.Typer(help="自分のリプレイ動画分析")
 # Mount subcommands
 app.add_typer(vod_app, name="vod", help="動画分析（解説動画・プレイ動画）")
 app.add_typer(replay_app, name="replay", help="自分のリプレイ動画分析")
-app.add_typer(dashboard_app, name="dashboard", help="成長トレンドダッシュボード")
+if dashboard_app is not None:
+    app.add_typer(dashboard_app, name="dashboard", help="成長トレンドダッシュボード")
 
 
 def _load_env() -> None:
@@ -96,6 +102,17 @@ def _is_valid_riot_id(value: str) -> bool:
     return bool(game_name.strip()) and bool(tag_line.strip())
 
 
+def _detect_node_major(node_path: str) -> int | None:
+    try:
+        result = subprocess.run(
+            [node_path, "--version"], capture_output=True, text=True, check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    head = result.stdout.strip().lstrip("v").split(".", 1)[0]
+    return int(head) if head.isdigit() else None
+
+
 def _doctor_checks() -> list[tuple[str, bool, str]]:
     env_values = _read_env_file(ENV_PATH)
     _load_env()
@@ -103,6 +120,8 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
     ffmpeg_path = shutil.which("ffmpeg")
     ffprobe_path = shutil.which("ffprobe")
     node_path = shutil.which("node")
+    node_major = _detect_node_major(node_path) if node_path else None
+    node_ok = node_path is not None and node_major is not None and node_major >= 18
     npm_path = shutil.which("npm")
     review_output_dir = REPO_ROOT / "packages" / "lol_review" / "output"
     vod_output_dir = REPO_ROOT / "packages" / "lol_vod_analyzer" / "output"
@@ -156,10 +175,14 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
         ),
         (
             "node",
-            node_path is not None,
+            node_ok,
             "見つかりません。Evidence.dev ダッシュボードを使うなら Node.js (>=18) を導入してください（mise install または brew install node）。"
             if node_path is None
-            else f"実行ファイル: {node_path}",
+            else (
+                f"v{node_major} は古すぎます。Node >= 18 が必要です。"
+                if node_major is not None and node_major < 18
+                else f"実行ファイル: {node_path} (v{node_major})"
+            ),
         ),
         (
             "npm",

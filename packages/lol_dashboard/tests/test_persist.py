@@ -46,6 +46,9 @@ def test_classify_queue(queue_id, expected):
     (None, None),
     ("bad", None),
     ("1", None),
+    ("foo.bar", None),
+    ("foo.bar.baz", None),
+    ("15.x.123", None),
 ])
 def test_classify_patch(gv, expected):
     assert classify_patch(gv) == expected
@@ -176,14 +179,59 @@ def test_backfill_multi_summoner(tmp_path: Path) -> None:
     output = tmp_path / "output"
     output.mkdir()
     _write_findings(output, "20260501_120000", summoner="alice#1234")
-    # second file for different summoner reuses same snapshot_id — both are valid in different summoner rows
-    # but backfill deduplicates by snapshot_id; use different ids
     _write_findings(output, "20260501_130000", summoner="bob#5678")
 
     backfill(db, output)
     con = init_db(db)
     count = con.execute("SELECT COUNT(*) FROM snapshots").fetchone()[0]
     assert count == 2
+    con.close()
+
+
+def test_backfill_dedupes_by_snapshot_and_summoner(tmp_path: Path) -> None:
+    """Same snapshot_id with different summoners should both load (PK is the pair)."""
+    db = tmp_path / "lol.duckdb"
+    output = tmp_path / "output"
+    output.mkdir()
+    # Same snapshot_id "20260501_120000" but different summoners → different filenames needed
+    # Real lol_review writes one summoner per file, so we simulate by using subdirectories
+    # to bypass identical filenames.
+    sub_a = output / "alice"
+    sub_b = output / "bob"
+    sub_a.mkdir()
+    sub_b.mkdir()
+    _write_findings(sub_a, "20260501_120000", summoner="alice#1234")
+    _write_findings(sub_b, "20260501_120000", summoner="bob#5678")
+
+    # Run backfill against each subdir
+    backfill(db, sub_a)
+    backfill(db, sub_b)
+
+    con = init_db(db)
+    rows = con.execute("SELECT snapshot_id, summoner FROM snapshots ORDER BY summoner").fetchall()
+    assert rows == [("20260501_120000", "alice#1234"), ("20260501_120000", "bob#5678")]
+    con.close()
+
+
+def test_upsert_rollback_on_failure(tmp_path: Path) -> None:
+    """If a later INSERT fails, prior DELETE should be rolled back."""
+    from lol_dashboard.persist import upsert_snapshot
+    con = init_db(tmp_path / "test.duckdb")
+
+    # Seed an existing snapshot
+    upsert_snapshot(con, _make_payload(snapshot_id="20260501_120000", summoner="alice#1234"))
+    initial = con.execute("SELECT COUNT(*) FROM matches WHERE snapshot_id = '20260501_120000'").fetchone()[0]
+    assert initial == 1
+
+    # Force a failure: corrupt the payload by patching to raise during inner insert
+    bad_payload = _make_payload(snapshot_id="20260501_120000", summoner="alice#1234")
+    with patch("lol_dashboard.persist._upsert_snapshot_inner", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError):
+            upsert_snapshot(con, bad_payload)
+
+    # After rollback, prior data should still be intact
+    after = con.execute("SELECT COUNT(*) FROM matches WHERE snapshot_id = '20260501_120000'").fetchone()[0]
+    assert after == 1
     con.close()
 
 

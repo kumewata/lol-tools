@@ -33,7 +33,28 @@ GROUP BY f.category, f.severity
 ORDER BY occurrences DESC
 ```
 
-## 所見タイムライン
+## 所見タイムライン（severity 別カラー）
+
+各スナップショットでどの所見が出ていたかを散布図で可視化する。
+y 軸はカテゴリ、点の色は severity（critical=赤 / warning=橙 / info=青）。
+
+<ScatterPlot
+  data={findings_timeline}
+  x="generated_at"
+  y="category"
+  series="severity"
+  seriesColors={{"critical": "#ef4444", "warning": "#f59e0b", "info": "#3b82f6"}}
+  pointSize=80
+  tooltip={[
+    {id: 'generated_at', title: 'スナップショット'},
+    {id: 'category', title: 'カテゴリ'},
+    {id: 'severity', title: 'Severity'},
+    {id: 'message', title: 'メッセージ'},
+    {id: 'detail', title: '詳細'}
+  ]}
+/>
+
+## 所見一覧
 
 <DataTable
   data={findings_timeline}
