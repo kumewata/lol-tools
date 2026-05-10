@@ -247,6 +247,48 @@ uv run lol-tools vod analyze path/to/replay.proxy.mp4 \
   --no-open
 ```
 
+## 履歴ダッシュボード
+
+`lol-tools review` の出力を DuckDB に蓄積し、Evidence.dev でブラウザ表示するダッシュボード。
+時系列での勝率・KDA・CS/min・所見・チャンピオン別 WR を追える。
+
+### 前提条件
+
+- Node.js 18+ / 20 / 22（Evidence.dev 公式サポート）
+- npm
+
+リポジトリ直下の `.mise.toml` で Node 22 を pin している。`mise` 利用者は `mise install` で揃う。
+
+### セットアップ
+
+```bash
+# 1. Python 側（DuckDB 永続化層）
+uv sync
+
+# 2. 既存の findings_*.json を全件 DuckDB に取り込む
+uv run lol-tools dashboard backfill
+
+# 3. Evidence.dev 側（初回のみ）
+cd packages/lol_dashboard/evidence
+npm install
+npm run sources    # ソーステーブルを Evidence にキャッシュ
+```
+
+### 使い方
+
+```bash
+# 開発サーバを立てる（ブラウザで http://localhost:3000）
+uv run lol-tools dashboard serve
+
+# 静的サイトとしてビルド（packages/lol_dashboard/evidence/build/）
+uv run lol-tools dashboard build
+
+# review 実行時の自動 sync をスキップする場合
+uv run lol-tools review --no-persist
+```
+
+通常の `lol-tools review` 実行後は自動で `lol-tools dashboard sync` が走るので、ダッシュボード側は最新状態に保たれる。
+
 ## 補助コマンド
 
 ```bash

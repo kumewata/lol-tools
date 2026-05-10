@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "lol-review",
     "lol-vod-analyzer",
+    "lol-dashboard",
     "typer[all]>=0.9",
     "rich>=13.7",
     "python-dotenv>=1.0",
@@ -20,6 +21,7 @@ members = ["packages/*"]
 [tool.uv.sources]
 lol-review = { workspace = true }
 lol-vod-analyzer = { workspace = true }
+lol-dashboard = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lol_tools"]

@@ -154,6 +154,7 @@ class RiotClient:
 
         cs = participant["totalMinionsKilled"] + participant["neutralMinionsKilled"]
         queue_type = str(info.get("queueId", ""))
+        game_version = info.get("gameVersion", "")
 
         # Kill participation: (K+A) / team total kills
         my_team_id = participant["teamId"]
@@ -214,6 +215,7 @@ class RiotClient:
             damage_physical=damage_physical,
             damage_magical=damage_magical,
             damage_true=damage_true,
+            game_version=game_version,
         )
 
     def parse_timeline(

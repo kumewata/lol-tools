@@ -43,10 +43,16 @@ lol-tools/
 │   │   ├── src/lol_review/
 │   │   ├── templates/
 │   │   └── tests/
-│   └── lol_vod_analyzer/       # 動画分析
+│   ├── lol_vod_analyzer/       # 動画分析
+│   │   ├── pyproject.toml
+│   │   ├── src/lol_vod_analyzer/
+│   │   ├── templates/
+│   │   └── tests/
+│   └── lol_dashboard/          # 成長トレンドダッシュボード（DuckDB + Evidence.dev）
 │       ├── pyproject.toml
-│       ├── src/lol_vod_analyzer/
-│       ├── templates/
+│       ├── src/lol_dashboard/  # schema / persist / cli
+│       ├── data/               # DuckDB ファイル（gitignore）
+│       ├── evidence/           # Evidence.dev プロジェクト
 │       └── tests/
 ```
 

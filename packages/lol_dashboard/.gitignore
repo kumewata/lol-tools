@@ -1,0 +1,4 @@
+data/
+evidence/build/
+evidence/.evidence/
+node_modules/

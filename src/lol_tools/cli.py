@@ -14,6 +14,7 @@ import typer
 from dotenv import load_dotenv
 from rich.console import Console
 
+from lol_dashboard.cli import app as dashboard_app
 from lol_vod_analyzer.main import app as vod_app
 from lol_vod_analyzer.system_tools import install_hint
 
@@ -30,9 +31,10 @@ app = typer.Typer(
 replay_app = typer.Typer(help="自分のリプレイ動画分析")
 
 
-# Mount lol_vod_analyzer as "vod" subcommand
+# Mount subcommands
 app.add_typer(vod_app, name="vod", help="動画分析（解説動画・プレイ動画）")
 app.add_typer(replay_app, name="replay", help="自分のリプレイ動画分析")
+app.add_typer(dashboard_app, name="dashboard", help="成長トレンドダッシュボード")
 
 
 def _load_env() -> None:
@@ -100,8 +102,12 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
 
     ffmpeg_path = shutil.which("ffmpeg")
     ffprobe_path = shutil.which("ffprobe")
+    node_path = shutil.which("node")
+    npm_path = shutil.which("npm")
     review_output_dir = REPO_ROOT / "packages" / "lol_review" / "output"
     vod_output_dir = REPO_ROOT / "packages" / "lol_vod_analyzer" / "output"
+    dashboard_db = REPO_ROOT / "packages" / "lol_dashboard" / "data" / "lol_history.duckdb"
+    dashboard_node_modules = REPO_ROOT / "packages" / "lol_dashboard" / "evidence" / "node_modules"
 
     return [
         (
@@ -147,6 +153,34 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
             + install_hint("ffprobe")
             if ffprobe_path is None
             else f"実行ファイル: {ffprobe_path}",
+        ),
+        (
+            "node",
+            node_path is not None,
+            "見つかりません。Evidence.dev ダッシュボードを使うなら Node.js (>=18) を導入してください（mise install または brew install node）。"
+            if node_path is None
+            else f"実行ファイル: {node_path}",
+        ),
+        (
+            "npm",
+            npm_path is not None,
+            "見つかりません。`lol-tools dashboard serve` / `build` には npm が必要です。"
+            if npm_path is None
+            else f"実行ファイル: {npm_path}",
+        ),
+        (
+            "dashboard DB",
+            dashboard_db.exists(),
+            "未生成です。`lol-tools dashboard backfill` で初期化できます。"
+            if not dashboard_db.exists()
+            else f"DuckDB: {dashboard_db}",
+        ),
+        (
+            "Evidence.dev",
+            dashboard_node_modules.exists(),
+            "未セットアップです。`cd packages/lol_dashboard/evidence && npm install` を実行してください。"
+            if not dashboard_node_modules.exists()
+            else "node_modules 確認済み",
         ),
         (
             "出力先",
@@ -276,6 +310,7 @@ def review(
     count: int | None = typer.Option(None, help="取得する試合数"),
     ranked_only: bool = typer.Option(False, "--ranked-only", help="ランク戦のみ"),
     no_open: bool = typer.Option(False, "--no-open", help="ブラウザを開かない"),
+    no_persist: bool = typer.Option(False, "--no-persist", help="DuckDB への自動 sync を行わない"),
 ) -> None:
     """試合データを分析してレポートを生成します。
 
@@ -300,6 +335,15 @@ def review(
         args.append("--no-open")
 
     _click_report.main(args, standalone_mode=False)
+
+    if not no_persist:
+        try:
+            from lol_dashboard.cli import _DB_PATH, _OUTPUT_DIR, _ensure_db_dir
+            from lol_dashboard.persist import sync_latest
+            _ensure_db_dir()
+            sync_latest(_DB_PATH, _OUTPUT_DIR)
+        except Exception as e:
+            console.print(f"[yellow]Warning:[/] dashboard sync をスキップしました: {e}")
 
 
 @app.command("export-match-data")
