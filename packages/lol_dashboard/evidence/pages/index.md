@@ -11,9 +11,9 @@ SELECT
     total_games,
     wins,
     losses,
-    ROUND(win_rate * 100, 1) AS win_rate_pct,
-    ROUND(avg_kda, 2)        AS avg_kda,
-    ROUND(avg_cs_per_min, 2) AS avg_cs_per_min
+    ROUND(win_rate, 4)        AS win_rate_pct,
+    ROUND(avg_kda, 2)         AS avg_kda,
+    ROUND(avg_cs_per_min, 2)  AS avg_cs_per_min
 FROM lol_history.snapshots
 WHERE summoner = 'apililili#3197'
 ORDER BY snapshot_id DESC
@@ -29,7 +29,8 @@ SELECT COUNT(*) AS cnt FROM lol_history.snapshots WHERE summoner = 'apililili#31
 <BigValue
   data={latest_snapshot}
   value="win_rate_pct"
-  title="勝率 (%)"
+  fmt="pct1"
+  title="勝率"
 />
 
 <BigValue

@@ -14,8 +14,8 @@ title: チャンピオン統計
 SELECT
     s.generated_at,
     m.champion,
-    COUNT(*) AS games,
-    ROUND(AVG(CASE WHEN m.win THEN 1.0 ELSE 0.0 END) * 100, 1) AS win_rate_pct
+    COUNT(*)                                                AS games,
+    ROUND(AVG(CASE WHEN m.win THEN 1.0 ELSE 0.0 END), 4)    AS win_rate_pct
 FROM lol_history.matches m
 JOIN lol_history.snapshots s
   ON m.snapshot_id = s.snapshot_id
@@ -51,8 +51,8 @@ LIMIT 15
 SELECT
     m.patch,
     m.champion,
-    COUNT(*) AS games,
-    ROUND(AVG(CASE WHEN m.win THEN 1.0 ELSE 0.0 END) * 100, 1) AS win_rate_pct
+    COUNT(*)                                                AS games,
+    ROUND(AVG(CASE WHEN m.win THEN 1.0 ELSE 0.0 END), 4)    AS win_rate_pct
 FROM lol_history.matches m
 WHERE m.summoner = 'apililili#3197'
   AND m.patch IS NOT NULL
@@ -69,7 +69,8 @@ ORDER BY m.patch DESC, win_rate_pct DESC
   x="generated_at"
   y="win_rate_pct"
   series="champion"
-  yAxisTitle="勝率 (%)"
+  yFmt="pct1"
+  yAxisTitle="勝率"
 />
 
 ## ピック頻度

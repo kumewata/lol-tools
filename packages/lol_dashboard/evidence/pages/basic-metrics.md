@@ -13,12 +13,12 @@ title: 基本指標トレンド
 ```sql metrics
 SELECT
     s.generated_at,
-    ROUND(AVG(CASE WHEN m.win THEN 1.0 ELSE 0.0 END) * 100, 1) AS win_rate_pct,
-    ROUND(AVG((m.kills + m.assists) / GREATEST(m.deaths, 1)), 2) AS avg_kda,
-    ROUND(AVG(m.cs_per_min), 2) AS avg_cs_per_min,
-    ROUND(AVG(m.kill_participation) * 100, 1) AS avg_kp_pct,
-    ROUND(AVG(m.vision_score * 60.0 / m.game_duration_seconds), 1) AS avg_vision_per_min,
-    COUNT(*) AS games
+    ROUND(AVG(CASE WHEN m.win THEN 1.0 ELSE 0.0 END), 4)               AS win_rate_pct,
+    ROUND(AVG((m.kills + m.assists) / GREATEST(m.deaths, 1)), 2)       AS avg_kda,
+    ROUND(AVG(m.cs_per_min), 2)                                        AS avg_cs_per_min,
+    ROUND(AVG(m.kill_participation), 4)                                AS avg_kp_pct,
+    ROUND(AVG(m.vision_score * 60.0 / m.game_duration_seconds), 2)     AS avg_vision_per_min,
+    COUNT(*)                                                           AS games
 FROM lol_history.snapshots s
 JOIN lol_history.matches m
   ON m.snapshot_id = s.snapshot_id
@@ -33,13 +33,14 @@ GROUP BY s.generated_at
 ORDER BY s.generated_at
 ```
 
-## 勝率 (%)
+## 勝率
 
 <LineChart
   data={metrics}
   x="generated_at"
   y="win_rate_pct"
-  yAxisTitle="勝率 (%)"
+  yFmt="pct1"
+  yAxisTitle="勝率"
 />
 
 ## 平均 KDA
@@ -60,13 +61,14 @@ ORDER BY s.generated_at
   yAxisTitle="CS/min"
 />
 
-## キル参加率 (%)
+## キル参加率
 
 <LineChart
   data={metrics}
   x="generated_at"
   y="avg_kp_pct"
-  yAxisTitle="KP (%)"
+  yFmt="pct1"
+  yAxisTitle="KP"
 />
 
 ## Vision / min
