@@ -17,6 +17,7 @@ from rich.console import Console
 
 from lol_vod_analyzer.main import app as vod_app
 from lol_vod_analyzer.system_tools import install_hint
+from lol_tools.matchup import app as matchup_app
 
 try:
     from lol_dashboard.cli import app as dashboard_app
@@ -53,6 +54,7 @@ replay_app = typer.Typer(help="自分のリプレイ動画分析")
 
 # Mount subcommands
 app.add_typer(vod_app, name="vod", help="動画分析（解説動画・プレイ動画）")
+app.add_typer(matchup_app, name="matchup", help="対面・ピック傾向サマリ")
 app.add_typer(replay_app, name="replay", help="自分のリプレイ動画分析")
 if dashboard_app is not None:
     app.add_typer(dashboard_app, name="dashboard", help="成長トレンドダッシュボード")
