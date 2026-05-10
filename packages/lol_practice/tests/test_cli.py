@@ -175,3 +175,109 @@ def test_status_human_readable_default(isolated_dirs, sample_plan):
     assert result.exit_code == 0
     # 人間可読モード（JSON ではない）
     assert "{" not in result.stdout.split("\n")[0] or "cs" in result.stdout
+
+
+def test_generate_creates_dated_plan_from_latest_findings(isolated_dirs, tmp_path):
+    from lol_practice.cli import app
+
+    findings_path = tmp_path / "latest_findings.json"
+    findings_path.write_text(
+        json.dumps(
+            {
+                "summoner": "kumewata#JP1",
+                "generated_at": "20260510_135640",
+                "findings": [
+                    {
+                        "category": "cs",
+                        "severity": "warning",
+                        "message": "CS/min が低め（サポート）",
+                        "detail": "平均 1.0 CS/min",
+                    },
+                    {
+                        "category": "cs",
+                        "severity": "critical",
+                        "message": "CS/min が非常に低い（ボット）",
+                        "detail": "平均 5.0 CS/min",
+                    },
+                    {
+                        "category": "kill_participation",
+                        "severity": "warning",
+                        "message": "キル参加率が低い（サポート）",
+                        "detail": "平均 47%",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--findings-json",
+            str(findings_path),
+            "--date",
+            "2026-05-10",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["created"] is True
+    assert payload["date"] == "2026-05-10"
+
+    from lol_practice import store
+
+    plan = store.load_plan(store.plans_dir() / "2026-05-10.md")
+    assert plan.based_on_snapshot == "20260510_135640"
+    assert plan.target_summoner == "kumewata#JP1"
+    assert [item.category for item in plan.items] == ["cs", "kill_participation"]
+    assert plan.items[0].severity_at_creation == "critical"
+    assert "CS/min が非常に低い" in plan.items[0].source_finding_message
+    assert "CS/min が低め" in plan.items[0].source_finding_message
+
+
+def test_generate_keeps_existing_plan_without_force(isolated_dirs, sample_plan, tmp_path):
+    from lol_practice import store
+    from lol_practice.cli import app
+
+    store.save_plan(sample_plan)
+    findings_path = tmp_path / "latest_findings.json"
+    findings_path.write_text(
+        json.dumps(
+            {
+                "summoner": "kumewata#JP1",
+                "generated_at": "snap_new",
+                "findings": [
+                    {
+                        "category": "cs",
+                        "severity": "critical",
+                        "message": "new",
+                        "detail": "new detail",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--findings-json",
+            str(findings_path),
+            "--date",
+            "2026-05-10",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["created"] is False
+
+    plan = store.load_plan(store.plans_dir() / "2026-05-10.md")
+    assert plan.based_on_snapshot == "snap_1"
