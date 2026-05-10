@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import duckdb
 import pytest
 
 from lol_dashboard.models import SnapshotPayload, MatchRecord, FindingRecord, ChampionStatRecord
@@ -290,7 +291,9 @@ def test_upsert_rollback_on_failure(tmp_path: Path) -> None:
     bad.matches[0].champion = "BrokenChamp"
     bad.matches[0].kills = 2**40  # exceeds INTEGER (32-bit)
 
-    with pytest.raises(Exception):  # noqa: BLE001 — DuckDB raises ConversionException
+    # Pin to DuckDB's specific overflow/conversion error so that future test
+    # runs cannot silently pass on an unrelated failure path before the DELETE.
+    with pytest.raises(duckdb.Error, match=r"(?i)conversion|overflow|integer"):
         upsert_snapshot(con, bad)
 
     # After rollback the original Zyra row must still be present (DELETE was undone)
