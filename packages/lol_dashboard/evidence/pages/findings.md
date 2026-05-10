@@ -20,6 +20,20 @@ WHERE s.summoner = (SELECT summoner FROM lol_history.target_summoner)
 ORDER BY s.generated_at, f.severity
 ```
 
+```sql findings_per_snap
+SELECT
+    s.generated_at,
+    f.severity,
+    COUNT(*) AS findings_count
+FROM lol_history.findings f
+JOIN lol_history.snapshots s
+  ON f.snapshot_id = s.snapshot_id
+ AND f.summoner    = s.summoner
+WHERE s.summoner = (SELECT summoner FROM lol_history.target_summoner)
+GROUP BY s.generated_at, f.severity
+ORDER BY s.generated_at
+```
+
 ```sql findings_freq
 SELECT
     f.category,
@@ -34,23 +48,25 @@ GROUP BY f.category, f.severity
 ORDER BY occurrences DESC
 ```
 
-## 所見タイムライン（severity 別カラー）
+## 所見タイムライン（severity 別件数）
 
-各スナップショットでどの所見が出ていたかを散布図で可視化する。
-y 軸はカテゴリ、点の色は severity（critical=赤 / warning=橙 / info=青）。
+各スナップショットで検出された所見の数を severity 別に積み上げて時系列表示する。
+critical（赤）が増えていないか、warning（橙）が解消されているかを観察できる。
 
-<ScatterPlot
-  data={findings_timeline}
+<BarChart
+  data={findings_per_snap}
   x="generated_at"
-  y="category"
+  y="findings_count"
   series="severity"
+  type="stacked"
   seriesColors={{"critical": "#ef4444", "warning": "#f59e0b", "info": "#3b82f6"}}
-  tooltipTitle="message"
-  yAxisTitle="カテゴリ"
+  yAxisTitle="件数"
   xAxisTitle="スナップショット"
 />
 
-## 所見一覧
+## 所見一覧（時系列）
+
+スナップショットごとの個別所見。`category` / `severity` / `message` を確認できる。
 
 <DataTable
   data={findings_timeline}
