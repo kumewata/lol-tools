@@ -30,6 +30,14 @@ except ModuleNotFoundError as e:
     else:
         raise
 
+try:
+    from lol_practice.cli import app as practice_app
+except ModuleNotFoundError as e:
+    if e.name == "lol_practice":
+        practice_app = None
+    else:
+        raise
+
 # Repo root = src/lol_tools/cli.py -> src/lol_tools -> src -> lol-tools/
 REPO_ROOT = Path(__file__).parent.parent.parent
 ENV_PATH = REPO_ROOT / ".env"
@@ -48,6 +56,8 @@ app.add_typer(vod_app, name="vod", help="動画分析（解説動画・プレイ
 app.add_typer(replay_app, name="replay", help="自分のリプレイ動画分析")
 if dashboard_app is not None:
     app.add_typer(dashboard_app, name="dashboard", help="成長トレンドダッシュボード")
+if practice_app is not None:
+    app.add_typer(practice_app, name="practice", help="練習プラン（list/show/status）")
 
 
 def _load_env() -> None:

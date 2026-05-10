@@ -8,3 +8,4 @@ packages/*/uv.lock
 *.egg-info/
 dist/
 build/
+packages/lol_practice/plans/*.md

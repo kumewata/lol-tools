@@ -7,6 +7,7 @@ dependencies = [
     "lol-review",
     "lol-vod-analyzer",
     "lol-dashboard",
+    "lol-practice",
     "typer[all]>=0.9",
     "rich>=13.7",
     "python-dotenv>=1.0",
@@ -22,6 +23,11 @@ members = ["packages/*"]
 lol-review = { workspace = true }
 lol-vod-analyzer = { workspace = true }
 lol-dashboard = { workspace = true }
+lol-practice = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["packages"]
+addopts = "--import-mode=importlib"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lol_tools"]
