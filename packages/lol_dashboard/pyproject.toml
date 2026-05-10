@@ -1,0 +1,26 @@
+[project]
+name = "lol-dashboard"
+version = "0.1.0"
+description = "LoL growth trend dashboard using DuckDB + Evidence.dev"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.0",
+    "pydantic>=2.0",
+    "typer[all]>=0.9",
+    "python-dotenv>=1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lol_dashboard"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]

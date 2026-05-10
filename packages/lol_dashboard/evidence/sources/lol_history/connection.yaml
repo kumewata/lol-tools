@@ -1,0 +1,4 @@
+name: lol_history
+type: duckdb
+options:
+  filename: ../../../data/lol_history.duckdb

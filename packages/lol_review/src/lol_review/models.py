@@ -32,6 +32,7 @@ class MatchSummary(BaseModel):
     damage_physical: int = Field(default=0, ge=0)
     damage_magical: int = Field(default=0, ge=0)
     damage_true: int = Field(default=0, ge=0)
+    game_version: str = ""
 
     @computed_field  # type: ignore[misc]
     @property

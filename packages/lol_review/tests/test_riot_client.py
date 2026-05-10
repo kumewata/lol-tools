@@ -202,6 +202,7 @@ class TestParseMatchSummary:
             "metadata": {"matchId": "KR_99999"},
             "info": {
                 "queueId": 420,
+                "gameVersion": "15.9.123.4567",
                 "gameMode": "CLASSIC",
                 "gameDuration": 1800,
                 "gameCreation": 1700000000000,
@@ -303,8 +304,16 @@ class TestParseMatchSummary:
         assert result.damage_magical == 5000
         assert result.damage_true == 5000
         assert result.queue_type == "420"
+        assert result.game_version == "15.9.123.4567"
         assert result.game_duration_seconds == 1800
         assert result.timestamp_ms == 1700000000000
+
+    def test_parse_match_summary_missing_game_version_defaults_to_empty(self):
+        client = make_client()
+        data = self._make_match_data()
+        del data["info"]["gameVersion"]
+        result = client.parse_match_summary(data, "target-puuid")
+        assert result.game_version == ""
 
     def test_parse_match_summary_selects_correct_participant(self):
         """Should use other-puuid's data when requested."""
