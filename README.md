@@ -124,6 +124,32 @@ uv run lol-tools review --count 1 --no-open
 - HTML レポート: `packages/lol_review/output/`
 - 最新の JSON: `packages/lol_review/output/latest_findings.json`
 
+### 改善アドバイス（ChatGPT プランを利用）
+
+Claude Code / Codex を使わずに、試合データから改善アドバイスを生成します。
+LLM の利用分は、ログインした ChatGPT Plus / Pro プランの枠から消費されます（Sign in with ChatGPT、preview 機能）。
+Free プランなど対象外のアカウントでは、ログイン時に `invalid_grant` で失敗します。
+
+```bash
+# 初回のみ: ブラウザで ChatGPT にログインし、プラン利用を許可する
+uv run lol-tools auth chatgpt login
+
+# 試合データを取得してアドバイスを生成する
+uv run lol-tools advise
+
+# 既存の latest_findings.json を使う
+uv run lol-tools advise --no-fetch
+
+# LLM に渡す内容だけ確認する（ログイン不要・枠を消費しない）
+uv run lol-tools advise --no-fetch --dry-run
+```
+
+- 出力: `packages/lol_review/output/advice_YYYYMMDD_HHMMSS.md`
+- モデル: `--model` > 環境変数 `LOL_TOOLS_CHATGPT_MODEL` > 既定の `gpt-5.6-luna`（プラン枠の消費を抑える軽量モデル）。一覧は `uv run lol-tools auth chatgpt models`
+- 認証情報: `~/.config/lol-tools/chatgpt.json`（権限 600。`LOL_TOOLS_CONFIG_DIR` で変更可）
+- ログイン状態の確認・解除: `uv run lol-tools auth chatgpt status` / `logout`
+- 利用上限: アプリごとの上限は https://chatgpt.com/settings/usage で設定できます。連携の解除は https://chatgpt.com/settings/security
+
 ### 動画分析
 
 #### 解説動画分析

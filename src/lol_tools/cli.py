@@ -18,6 +18,7 @@ from rich.console import Console
 from lol_vod_analyzer.main import app as vod_app
 from lol_vod_analyzer.system_tools import install_hint
 from lol_tools.matchup import app as matchup_app
+from lol_tools.coach import auth_app
 
 try:
     from lol_dashboard.cli import app as dashboard_app
@@ -56,6 +57,7 @@ replay_app = typer.Typer(help="自分のリプレイ動画分析")
 app.add_typer(vod_app, name="vod", help="動画分析（解説動画・プレイ動画）")
 app.add_typer(matchup_app, name="matchup", help="対面・ピック傾向サマリ")
 app.add_typer(replay_app, name="replay", help="自分のリプレイ動画分析")
+app.add_typer(auth_app, name="auth", help="外部サービスへのログイン（ChatGPT）")
 if dashboard_app is not None:
     app.add_typer(dashboard_app, name="dashboard", help="成長トレンドダッシュボード")
 if practice_app is not None:
@@ -394,6 +396,55 @@ def review(
             console.print(f"[yellow]Warning:[/] dashboard sync をスキップしました: {e}")
 
 
+@app.command()
+def advise(
+    riot_id: str | None = typer.Argument(None, help="Riot ID（例: SummonerName#JP1）省略時は .env の DEFAULT_RIOT_ID"),
+    count: int | None = typer.Option(None, help="取得する試合数"),
+    no_fetch: bool = typer.Option(False, "--no-fetch", help="review を実行せず、既存の latest_findings.json を使う"),
+    model: str | None = typer.Option(None, "--model", help="使用するモデル（省略時は LOL_TOOLS_CHATGPT_MODEL、なければ gpt-5.6-luna）"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="LLM を呼ばず、LLM に渡す入力を表示する"),
+) -> None:
+    """ChatGPT プランを使って、試合データから改善アドバイスを生成します。
+
+    事前に `uv run lol-tools auth chatgpt login` が必要です（`--dry-run` を除く）。
+
+    例:
+    `uv run lol-tools advise`
+    `uv run lol-tools advise --no-fetch --dry-run`
+    """
+    from lol_coach.errors import CoachError
+    from lol_tools import coach
+
+    _load_env()
+    if not no_fetch:
+        review(riot_id=riot_id, count=count, ranked_only=False, no_open=True, no_persist=False)
+
+    findings_path = _latest_findings_path()
+    if not findings_path.exists():
+        console.print(f"[red]Error:[/] {findings_path} がありません。先に `uv run lol-tools review` を実行してください。")
+        raise typer.Exit(1)
+
+    summoner = riot_id or os.environ.get("DEFAULT_RIOT_ID") or None
+    input_text = coach.build_advice_input(findings_path, summoner)
+    if dry_run:
+        from lol_coach.advise import load_instructions
+
+        print(load_instructions())
+        print("\n---- input ----")
+        print(input_text)
+        return
+
+    try:
+        path = coach.run_llm_advice(input_text, output_dir=findings_path.parent, model=model)
+    except CoachError as e:
+        from rich.markup import escape
+
+        console.print(f"[red]Error:[/] {escape(str(e))}")
+        raise typer.Exit(1) from None
+    console.print(f"[green]保存しました:[/] {path}")
+    console.print("練習プランを更新するには: `uv run lol-tools practice generate`")
+
+
 @app.command("export-match-data")
 def export_match_data(
     input_path: Path = typer.Option(
@@ -596,6 +647,9 @@ def examples() -> None:
     console.print("\n[bold]Match Review[/]")
     console.print('uv run lol-tools review "SummonerName#JP1"')
     console.print("uv run lol-tools review --count 1 --no-open")
+    console.print("\n[bold]Advice (ChatGPT plan)[/]")
+    console.print("uv run lol-tools auth chatgpt login")
+    console.print("uv run lol-tools advise")
     console.print("\n[bold]Replay Analysis[/]")
     console.print("uv run lol-tools replay analyze path/to/replay.mp4")
     console.print("uv run lol-tools replay analyze path/to/replay.mp4 --review-count 5 --match-index 2")
