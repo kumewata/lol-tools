@@ -222,6 +222,33 @@ def show_plan(
     console.print(Markdown(md_text))
 
 
+def _status_payload(plan: Plan, verdicts: list) -> dict[str, Any]:
+    return {
+        "plans": [
+            {
+                "date": plan.date,
+                "based_on_snapshot": plan.based_on_snapshot,
+                "target_summoner": plan.target_summoner,
+                "verdicts": [v.model_dump() for v in verdicts],
+            }
+        ]
+    }
+
+
+def build_status_payload(summoner: str | None = None, date: str | None = None) -> dict[str, Any]:
+    """Return the same payload as `practice status --json` without printing.
+
+    `summoner` defaults to the plan's target summoner, so callers do not need `.env`.
+    """
+    if not store.list_plans():
+        return {"plans": []}
+    plan = _find_plan(date)
+    if plan is None:
+        return {"plans": []}
+    findings = _load_current_findings(_resolve_db_path(), summoner or plan.target_summoner)
+    return _status_payload(plan, evaluate_progress(plan, findings))
+
+
 @app.command("status")
 def status(
     date: str | None = typer.Option(None, "--date", help="判定対象の日付。省略時は最新"),
@@ -250,17 +277,7 @@ def status(
     verdicts = evaluate_progress(plan, findings)
 
     if json_output:
-        payload = {
-            "plans": [
-                {
-                    "date": plan.date,
-                    "based_on_snapshot": plan.based_on_snapshot,
-                    "target_summoner": plan.target_summoner,
-                    "verdicts": [v.model_dump() for v in verdicts],
-                }
-            ]
-        }
-        print(json.dumps(payload, ensure_ascii=False))
+        print(json.dumps(_status_payload(plan, verdicts), ensure_ascii=False))
         return
 
     table = Table(title=f"進捗判定 ({plan.date})", show_header=True)

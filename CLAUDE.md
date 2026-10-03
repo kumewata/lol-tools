@@ -48,6 +48,7 @@ lol-tools/
 │   │   ├── src/lol_vod_analyzer/
 │   │   ├── templates/
 │   │   └── tests/
+│   ├── lol_coach/              # 助言生成（Sign in with ChatGPT + Responses API）。出力フォーマット正本は prompts/advice.md
 │   └── lol_dashboard/          # 成長トレンドダッシュボード（DuckDB + Evidence.dev）
 │       ├── pyproject.toml
 │       ├── src/lol_dashboard/  # schema / persist / cli
@@ -61,6 +62,7 @@ lol-tools/
 - **Python 3.12+** / **uv** package manager (workspace)
 - **Riot API** (lol_review)
 - **Google Gemini API** (lol_vod_analyzer)
+- **Sign in with ChatGPT / OpenAI Responses API** (lol_coach、ユーザーの ChatGPT プラン枠を利用)
 - **yt-dlp** (YouTube字幕・ストーリーボード・動画ダウンロード)
 - **OpenCV** / **Pillow** (スクリーンショット抽出・画像処理)
 - **ffmpeg** (音声抽出・画面録画)

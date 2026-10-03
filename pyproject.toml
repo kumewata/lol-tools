@@ -8,6 +8,7 @@ dependencies = [
     "lol-vod-analyzer",
     "lol-dashboard",
     "lol-practice",
+    "lol-coach",
     "typer[all]>=0.9",
     "rich>=13.7",
     "python-dotenv>=1.0",
@@ -24,6 +25,7 @@ lol-review = { workspace = true }
 lol-vod-analyzer = { workspace = true }
 lol-dashboard = { workspace = true }
 lol-practice = { workspace = true }
+lol-coach = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]
