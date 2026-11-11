@@ -9,3 +9,10 @@ packages/*/uv.lock
 dist/
 build/
 packages/lol_practice/plans/*.md
+
+# Local agent settings and secret env files
+.claude/settings.local.json
+.claude/*.local.*
+.specstory/
+.env.*
+!.env.example
